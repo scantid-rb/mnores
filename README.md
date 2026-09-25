@@ -1,4 +1,4 @@
-# Inventario de Repuestos para Barcos — V1
+# Inventario de Repuestos para Barcos — V1 - este es un proyecto personal, el objetivo de este git y las explicaciones es dejar un punto de partida para mis compañeros de trabajo el día que yo marche de la empresa u otra persona decida continuar donde quedo el proyecto
 
 Aplicación web sencilla para gestionar el inventario de repuestos de una flota pequeña de barcos (~6 barcos, ~18 usuarios). Escrita en PHP 8.3 con SQLite. Sin frameworks JS, sin servicios externos, sin dependencias en la nube.
 
