@@ -1,0 +1,3 @@
+# Bloquear el acceso HTTP directo al código fuente de la aplicación.
+Order allow,deny
+Deny from all

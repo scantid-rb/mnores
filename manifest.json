@@ -1,0 +1,9 @@
+{
+    "kind": "app_full",
+    "app_version": "1.4.0",
+    "schema_version": 3,
+    "created_at_utc": "2026-09-25T01:35:37+00:00",
+    "sqlite_sha256": "9a6aefd247b2492ab89ad78f2e501dbe4247a0a23cf36582c96a1ce1e278c7cf",
+    "photos_expected": 1,
+    "photos_included": 1
+}

@@ -1,0 +1,3 @@
+# Bloquear el acceso HTTP al directorio de datos (SQLite y lock).
+Order allow,deny
+Deny from all

@@ -1,0 +1,15 @@
+RewriteEngine On
+
+# Asegurar que la cabecera "Authorization" (usada por la API para el
+# carnet de acceso del móvil) llegue a PHP. En algunos hostings
+# compartidos, PHP la oculta por defecto si no se hace esto.
+RewriteCond %{HTTP:Authorization} .
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+# Si el archivo o carpeta solicitado existe físicamente (assets, imágenes, etc.),
+# se sirve tal cual y no se reescribe.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Todo lo demás pasa por el front controller de la aplicación.
+RewriteRule ^ index.php [L]
