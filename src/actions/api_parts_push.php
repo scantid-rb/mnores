@@ -125,7 +125,7 @@ foreach ($changes as $c) {
 
     // ---------- CREAR PIEZA NUEVA ----------
     if ($action === 'create') {
-        $localId  = (string)($c['local_id'] ?? '');
+        $localId  = trim((string)($c['local_id'] ?? ''));
         $boatId   = (int)($c['boat_id'] ?? 0);
         $name     = trim((string)($c['name'] ?? ''));
         $reference= trim((string)($c['reference'] ?? ''));
@@ -135,7 +135,7 @@ foreach ($changes as $c) {
         $qty      = max(0, (int)($c['quantity'] ?? 0));
         $now      = api_now();
 
-        if ($boatId <= 0 || $name === '') {
+        if ($boatId <= 0 || $name === '' || $localId === '') {
             $results[] = ['action' => 'create', 'local_id' => $localId, 'status' => 'invalid'];
             continue;
         }
@@ -145,17 +145,36 @@ foreach ($changes as $c) {
             continue;
         }
 
+        // Idempotencia: si el móvil reintenta un create cuyo primer intento
+        // pudo llegar al servidor pero cuya respuesta se perdió, devolvemos
+        // la misma pieza en lugar de insertar un duplicado.
+        $existing = $pdo->prepare(
+            'SELECT id, updated_at FROM parts WHERE boat_id=:b AND client_local_id=:local LIMIT 1'
+        );
+        $existing->execute([':b' => $boatId, ':local' => $localId]);
+        $existingRow = $existing->fetch();
+        if ($existingRow) {
+            $results[] = [
+                'action'     => 'create',
+                'local_id'   => $localId,
+                'id'         => (int)$existingRow['id'],
+                'status'     => 'ok',
+                'updated_at' => $existingRow['updated_at'],
+            ];
+            continue;
+        }
+
         $pdo->prepare(
             'INSERT INTO parts (boat_id,name,name_norm,reference,reference_norm,category_id,
-                location,location_norm,quantity,notes,updated_at)
-             VALUES (:b,:n,:nn,:r,:rn,:c,:l,:ln,:q,:no,:t)'
+                location,location_norm,quantity,notes,client_local_id,updated_at)
+             VALUES (:b,:n,:nn,:r,:rn,:c,:l,:ln,:q,:no,:local,:t)'
         )->execute([
             ':b' => $boatId,
             ':n' => $name, ':nn' => search_norm($name),
             ':r' => $reference, ':rn' => search_norm($reference),
             ':c' => $catId,
             ':l' => $location, ':ln' => search_norm($location),
-            ':q' => $qty, ':no' => $notes,
+            ':q' => $qty, ':no' => $notes, ':local' => $localId,
             ':t' => $now,
         ]);
 

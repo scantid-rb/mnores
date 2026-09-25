@@ -58,9 +58,11 @@ function db_init_schema(PDO $pdo): void {
         quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
         notes TEXT NOT NULL DEFAULT '',
         photo_path TEXT,
+        client_local_id TEXT,
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_boat ON parts(boat_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_search ON parts(name_norm)");
+    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_parts_boat_client_local_id ON parts(boat_id, client_local_id) WHERE client_local_id IS NOT NULL");
     $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')");
     $pdo->exec("INSERT OR IGNORE INTO categories (name, name_norm, is_system) VALUES ('Sin categoría', 'sin categoria', 1)");
@@ -96,6 +98,17 @@ function db_migrate(PDO $pdo): void {
     if (!$has) $pdo->exec("ALTER TABLE users ADD COLUMN boat_id INTEGER REFERENCES boats(id) ON DELETE RESTRICT");
     // Normalizar name_norm de "Sin categoría" (sin acento) para búsquedas coherentes.
     $pdo->exec("UPDATE categories SET name_norm='sin categoria' WHERE is_system=1");
+
+    // --- Idempotencia de altas offline de Android ---
+    // client_local_id identifica de forma estable una pieza creada en el móvil.
+    // Se conserva por barco y permite que un reintento después de una caída de
+    // conexión devuelva la misma pieza en lugar de crear un duplicado.
+    $partCols = $pdo->query("PRAGMA table_info(parts)")->fetchAll();
+    $partNames = array_column($partCols, 'name');
+    if (!in_array('client_local_id', $partNames, true)) {
+        $pdo->exec("ALTER TABLE parts ADD COLUMN client_local_id TEXT");
+    }
+    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_parts_boat_client_local_id ON parts(boat_id, client_local_id) WHERE client_local_id IS NOT NULL");
 
     // --- Soporte API Android: columnas añadidas después del lanzamiento inicial.
     // db_init_schema() ya las crea en instalaciones nuevas; esto cubre las

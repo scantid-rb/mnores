@@ -204,6 +204,9 @@ varios cambios de golpe al recuperar conexión.
 - `action: "create"` → requiere `local_id` (un identificador que la app
   se inventa, tipo UUID, para poder emparejar la respuesta) y `boat_id`.
   **No** manda fotos aquí (ver sección 5).
+  `local_id` es idempotente dentro de cada `boat_id`: si el servidor ya
+  recibió ese mismo alta pero la respuesta se perdió, un reintento devuelve
+  el mismo `id` real con `status: "ok"` y no crea un duplicado.
 
 **Response 200:**
 ```json
