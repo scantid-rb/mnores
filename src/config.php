@@ -14,7 +14,7 @@ define('BRUTE_MAX_ATTEMPTS', 10);
 define('BRUTE_LOCK_SECONDS', 5 * 60);
 
 // Fase 4
-define('APP_VERSION',      '1.4.1');
+define('APP_VERSION',      '1.4.2');
 define('SCHEMA_VERSION',   3);
 define('BACKUP_DIR',       DATA_DIR . '/backups');
 define('AUTO_BACKUP_INTERVAL_SECONDS', 7 * 24 * 3600);

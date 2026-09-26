@@ -162,7 +162,7 @@ para usarlo como `since` en la siguiente llamada.
 
 ## 4. Subir cambios: POST /api/parts/push
 
-Para piezas **creadas o editadas offline**. Se puede mandar un lote con
+Para piezas **creadas, editadas o eliminadas offline**. Se puede mandar un lote con
 varios cambios de golpe al recuperar conexión.
 
 **Headers:** `Authorization: Bearer <token>`, `Content-Type: application/json`
@@ -192,6 +192,11 @@ varios cambios de golpe al recuperar conexión.
       "location": "Sala de máquinas",
       "quantity": 2,
       "notes": ""
+    },
+    {
+      "action": "delete",
+      "id": 12,
+      "base_updated_at": "2026-09-24T19:54:33.136Z"
     }
   ]
 }
@@ -215,7 +220,8 @@ varios cambios de golpe al recuperar conexión.
   "server_time": "...",
   "results": [
     { "action": "update", "id": 7, "status": "ok", "updated_at": "..." },
-    { "action": "create", "local_id": "uuid-generado-en-el-movil", "id": 58, "status": "ok", "updated_at": "..." }
+    { "action": "create", "local_id": "uuid-generado-en-el-movil", "id": 58, "status": "ok", "updated_at": "..." },
+    { "action": "delete", "id": 12, "status": "ok" }
   ]
 }
 ```
@@ -227,7 +233,7 @@ varios cambios de golpe al recuperar conexión.
 | `conflict_overwritten` | Alguien más había cambiado la pieza mientras estabas offline, pero tu cambio se aplicó igualmente (equipo pequeño, se prioriza simplicidad) | Opcional: avisar al usuario, no bloqueante |
 | `forbidden` | El usuario no tiene permiso sobre esa pieza/barco | Mostrar error, no reintentar |
 | `not_found` | La pieza (`id`) ya no existe | Descartar el cambio local |
-| `invalid` | Faltan datos obligatorios (nombre o barco) | Mostrar error de validación al usuario |
+| `invalid` | Faltan datos obligatorios o `id` no válido | Mostrar error de validación al usuario |
 
 ---
 
@@ -288,6 +294,6 @@ usuario).
 2. `GET /api/sync` (sin `since`) → guardar todo localmente (SQLite/Room) + guardar `server_time`.
 3. Uso normal offline: leer/editar/crear desde la base local; cada cambio se encola.
 4. Al detectar conexión:
-   - `POST /api/parts/push` con la cola de cambios de texto pendientes.
+   - `POST /api/parts/push` con la cola de cambios pendientes (create/update/delete).
    - Para cada pieza con foto pendiente de subir → `POST /api/photos/{id}`.
    - `GET /api/sync?since=<último server_time>` → aplicar cambios entrantes, guardar el nuevo `server_time`.

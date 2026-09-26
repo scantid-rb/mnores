@@ -62,7 +62,17 @@ function db_init_schema(PDO $pdo): void {
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_boat ON parts(boat_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_search ON parts(name_norm)");
-    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_parts_boat_client_local_id ON parts(boat_id, client_local_id) WHERE client_local_id IS NOT NULL");
+
+    // La columna client_local_id puede no existir todavía en bases antiguas.
+    // No intentar crear el índice aquí hasta que db_migrate() haya añadido
+    // la columna. En instalaciones nuevas sí existe desde CREATE TABLE.
+    $partColsNow = $pdo->query("PRAGMA table_info(parts)")->fetchAll();
+    $partNamesNow = array_column($partColsNow, 'name');
+    if (in_array('client_local_id', $partNamesNow, true)) {
+        $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_parts_boat_client_local_id
+            ON parts(boat_id, client_local_id)
+            WHERE client_local_id IS NOT NULL");
+    }
     $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')");
     $pdo->exec("INSERT OR IGNORE INTO categories (name, name_norm, is_system) VALUES ('Sin categoría', 'sin categoria', 1)");

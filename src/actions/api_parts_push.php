@@ -6,8 +6,8 @@ declare(strict_types=1);
  * ---------------------------------
  * Ruta: POST /api/parts/push
  *
- * Recibe los cambios hechos offline en el móvil (piezas editadas o
- * creadas) y los aplica en la base de datos real.
+ * Recibe los cambios hechos offline en el móvil (piezas editadas, creadas o
+ * eliminadas) y los aplica en la base de datos real.
  *
  * IMPORTANTE: no gestiona fotos todavía (eso es el Paso 5, aparte).
  * Los campos que sí gestiona: name, reference, category_id, location,
@@ -71,7 +71,10 @@ foreach ($changes as $c) {
             continue;
         }
 
-        if (!parts_can_edit_all($actor, $row)) {
+        $canEditAll = parts_can_edit_all($actor, $row);
+        $canEditQuantity = parts_can_edit_quantity($actor, $row);
+
+        if (!$canEditAll && !$canEditQuantity) {
             $results[] = ['action' => 'update', 'id' => $id, 'status' => 'forbidden'];
             continue;
         }
@@ -82,35 +85,53 @@ foreach ($changes as $c) {
         $baseUpdatedAt = (string)($c['base_updated_at'] ?? '');
         $huboConflicto = $baseUpdatedAt !== '' && $baseUpdatedAt !== $row['updated_at'];
 
-        $name     = trim((string)($c['name'] ?? ''));
-        $reference= trim((string)($c['reference'] ?? ''));
-        $location = trim((string)($c['location'] ?? ''));
-        $notes    = trim((string)($c['notes'] ?? ''));
-        $catId    = (int)($c['category_id'] ?? 0) ?: null;
-        $qty      = max(0, (int)($c['quantity'] ?? 0));
-        $now      = api_now();
+        $qty = max(0, (int)($c['quantity'] ?? 0));
+        $now = api_now();
 
-        $pdo->prepare(
-            'UPDATE parts SET name=:n, name_norm=:nn, reference=:r, reference_norm=:rn,
-                category_id=:c, location=:l, location_norm=:ln, quantity=:q, notes=:no,
-                updated_at=:t WHERE id=:id'
-        )->execute([
-            ':n' => $name, ':nn' => search_norm($name),
-            ':r' => $reference, ':rn' => search_norm($reference),
-            ':c' => $catId,
-            ':l' => $location, ':ln' => search_norm($location),
-            ':q' => $qty, ':no' => $notes,
-            ':t' => $now, ':id' => $id,
-        ]);
+        if ($canEditAll) {
+            $name      = trim((string)($c['name'] ?? ''));
+            $reference = trim((string)($c['reference'] ?? ''));
+            $location  = trim((string)($c['location'] ?? ''));
+            $notes     = trim((string)($c['notes'] ?? ''));
+            $catId     = (int)($c['category_id'] ?? 0) ?: null;
 
-        audit_log('part.update', 'part', $id, (int)$row['boat_id'], $row, [
-            'name' => $name, 'reference' => $reference, 'category_id' => $catId,
-            'location' => $location, 'quantity' => $qty, 'notes' => $notes,
-        ]);
-        if ((int)$row['category_id'] !== (int)$catId) {
-            audit_log('part.category_change', 'part', $id, (int)$row['boat_id'], ['category_id' => $row['category_id']], ['category_id' => $catId]);
+            $pdo->prepare(
+                'UPDATE parts SET name=:n, name_norm=:nn, reference=:r, reference_norm=:rn,
+                    category_id=:c, location=:l, location_norm=:ln, quantity=:q, notes=:no,
+                    updated_at=:t WHERE id=:id'
+            )->execute([
+                ':n' => $name, ':nn' => search_norm($name),
+                ':r' => $reference, ':rn' => search_norm($reference),
+                ':c' => $catId,
+                ':l' => $location, ':ln' => search_norm($location),
+                ':q' => $qty, ':no' => $notes,
+                ':t' => $now, ':id' => $id,
+            ]);
+
+            audit_log('part.update', 'part', $id, (int)$row['boat_id'], $row, [
+                'name' => $name, 'reference' => $reference, 'category_id' => $catId,
+                'location' => $location, 'quantity' => $qty, 'notes' => $notes,
+            ]);
+            if ((int)$row['category_id'] !== (int)$catId) {
+                audit_log('part.category_change', 'part', $id, (int)$row['boat_id'], ['category_id' => $row['category_id']], ['category_id' => $catId]);
+            }
+        } else {
+            // Mecánico: exactamente la misma restricción que la web.
+            // Aunque el cliente envíe otros campos, el servidor los ignora.
+            $pdo->prepare(
+                'UPDATE parts SET quantity=:q, updated_at=:t WHERE id=:id'
+            )->execute([
+                ':q' => $qty,
+                ':t' => $now, ':id' => $id,
+            ]);
+
+            audit_log('part.quantity_change', 'part', $id, (int)$row['boat_id'],
+                ['quantity' => $row['quantity']],
+                ['quantity' => $qty]
+            );
         }
-        if ((int)$row['quantity'] !== $qty) {
+
+        if ($canEditAll && (int)$row['quantity'] !== $qty) {
             audit_log('part.quantity_change', 'part', $id, (int)$row['boat_id'], ['quantity' => $row['quantity']], ['quantity' => $qty]);
         }
 
@@ -119,6 +140,56 @@ foreach ($changes as $c) {
             'id'         => $id,
             'status'     => $huboConflicto ? 'conflict_overwritten' : 'ok',
             'updated_at' => $now,
+        ];
+        continue;
+    }
+
+    // ---------- ELIMINAR PIEZA EXISTENTE ----------
+    if ($action === 'delete') {
+        $id = (int)($c['id'] ?? 0);
+
+        if ($id <= 0) {
+            $results[] = ['action' => 'delete', 'id' => $id, 'status' => 'invalid'];
+            continue;
+        }
+
+        $current = $pdo->prepare('SELECT * FROM parts WHERE id = :id');
+        $current->execute([':id' => $id]);
+        $row = $current->fetch();
+
+        // Si ya no existe, el móvil puede descartar su operación pendiente.
+        if (!$row) {
+            $results[] = ['action' => 'delete', 'id' => $id, 'status' => 'not_found'];
+            continue;
+        }
+
+        if (!parts_can_delete($actor, $row)) {
+            $results[] = ['action' => 'delete', 'id' => $id, 'status' => 'forbidden'];
+            continue;
+        }
+
+        // Igual que en update: detectamos si alguien modificó la pieza
+        // mientras el móvil estaba offline, pero priorizamos la operación
+        // explícita del usuario y permitimos el borrado.
+        $baseUpdatedAt = (string)($c['base_updated_at'] ?? '');
+        $huboConflicto = $baseUpdatedAt !== '' && $baseUpdatedAt !== $row['updated_at'];
+
+        // El borrado web elimina también la fotografía asociada.
+        photo_delete($id);
+        $pdo->prepare('DELETE FROM parts WHERE id = :id')->execute([':id' => $id]);
+
+        audit_log(
+            'part.delete',
+            'part',
+            $id,
+            (int)$row['boat_id'],
+            ['name' => $row['name'], 'reference' => $row['reference']]
+        );
+
+        $results[] = [
+            'action' => 'delete',
+            'id' => $id,
+            'status' => $huboConflicto ? 'conflict_overwritten' : 'ok',
         ];
         continue;
     }
