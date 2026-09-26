@@ -101,6 +101,8 @@ Los cambios se aplican inmediatamente en la siguiente petición.
 
 ## API para la app Android (offline)
 
+**Estado del contrato:** actualizado el 26/09/2026. `POST /api/parts/push` admite ahora actualizaciones parciales de cantidad.
+
 Además de la web, la aplicación expone un pequeño conjunto de rutas
 `/api/...` pensadas exclusivamente para dar servicio a una app Android
 nativa que funciona **offline-first** (ve/edita/crea repuestos sin
@@ -116,7 +118,7 @@ si se añade o cambia algún endpoint — este README solo da el resumen.
 | `/api/login` | POST | Da un carnet de acceso (token) a partir de usuario/contraseña |
 | `/api/me` | GET | Confirma si el token sigue siendo válido y quién es el usuario |
 | `/api/sync` | GET | Baja barcos/categorías/piezas — todo, o solo lo cambiado desde una fecha (`?since=`) |
-| `/api/parts/push` | POST | Sube piezas creadas/editadas offline |
+| `/api/parts/push` | POST | Sube piezas creadas/editadas/eliminadas offline; admite updates completos y updates parciales de `quantity` |
 | `/api/photos/{id}` | GET/POST | Descarga o sube la foto de una pieza |
 
 **Autenticación**: por token (`Authorization: Bearer <token>`), no por
@@ -142,6 +144,17 @@ entera de qué se borró). Estas columnas y la tabla `api_tokens` están
 integradas en `db_init_schema()`/`db_migrate()` (`src/db.php`): se crean
 solas tanto en una instalación nueva como al actualizar una existente, no
 requieren ningún paso manual.
+
+**Actualización parcial de cantidad en `/api/parts/push`**: además del
+`update` completo, la API acepta un cambio de cantidad con solo
+`action`, `id`, `base_updated_at` y `quantity`. En este caso el servidor
+modifica exclusivamente `quantity` y `updated_at`, conservando nombre,
+referencia, categoría, ubicación y notas. Esta modalidad permite que los
+botones `+`/`−` de la app Android y el rol `mechanic` trabajen de forma
+directa y segura sin tener que reenviar todos los campos de la pieza. El
+control de permisos y la detección de conflictos mediante `base_updated_at`
+se mantienen exactamente igual.
+
 
 **Por qué HTTP y no HTTPS**: el hosting actual (AwardSpace, plan
 gratuito) no ofrece SSL. Se decidió asumir el riesgo conscientemente: el

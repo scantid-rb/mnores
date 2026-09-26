@@ -1,6 +1,8 @@
 # API de sincronización — Inventario de repuestos
 ### Contrato técnico para la app Android (offline-first)
 
+**Revisión del contrato:** 2026-09-26 — añadida actualización parcial de cantidad en `POST /api/parts/push`.
+
 Este documento describe la API REST que ya existe, en funcionamiento y probada,
 sobre el backend PHP actual. Sirve como especificación exacta para construir
 la app Android (con Emergent) que consuma estos endpoints.
@@ -183,6 +185,12 @@ varios cambios de golpe al recuperar conexión.
       "notes": "Quedan pocos"
     },
     {
+      "action": "update",
+      "id": 9,
+      "base_updated_at": "2026-09-24T19:54:33.136Z",
+      "quantity": 4
+    },
+    {
       "action": "create",
       "local_id": "uuid-generado-en-el-movil",
       "boat_id": 1,
@@ -202,10 +210,43 @@ varios cambios de golpe al recuperar conexión.
 }
 ```
 
+### Update parcial de cantidad
+
+Para cambios rápidos de cantidad, la app puede enviar únicamente los campos
+necesarios:
+
+```json
+{
+  "changes": [
+    {
+      "action": "update",
+      "id": 9,
+      "base_updated_at": "2026-09-24T19:54:33.136Z",
+      "quantity": 4
+    }
+  ]
+}
+```
+
+El servidor conserva todos los demás campos de la pieza y actualiza solo
+`quantity` y `updated_at`.
+
 - `action: "update"` → requiere `id` (de la pieza) y `base_updated_at`
   (el `updated_at` que la app tenía guardado de esa pieza **antes** de
   editarla offline; sirve para detectar si alguien más la cambió mientras
   tanto).
+- `action: "update"` admite dos formas:
+  1. **Actualización completa**, enviando `name`, `reference`, `category_id`,
+     `location`, `quantity` y `notes`. Se actualizan todos esos campos.
+  2. **Actualización parcial de cantidad**, enviando únicamente `quantity`
+     además de `action`, `id` y `base_updated_at`. En este caso el servidor
+     modifica **solo `quantity`** y conserva sin cambios `name`, `reference`,
+     `category_id`, `location` y `notes`. Esta forma está pensada
+     especialmente para los cambios rápidos de cantidad (`+` / `−`) y para
+     el rol `mechanic`, que solo tiene permiso para modificar cantidad.
+- En ambos tipos de `update`, `base_updated_at` se compara con el
+  `updated_at` actual del servidor. Si no coincide, el cambio se aplica
+  igualmente y se devuelve `status: "conflict_overwritten"`.
 - `action: "create"` → requiere `local_id` (un identificador que la app
   se inventa, tipo UUID, para poder emparejar la respuesta) y `boat_id`.
   **No** manda fotos aquí (ver sección 5).
