@@ -29,6 +29,9 @@ if (str_starts_with($path, '/api/')) {
         case '/api/parts/push':
             if ($method === 'POST') { require __DIR__ . '/src/actions/api_parts_push.php'; return; }
             break;
+        case '/api/boats':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_boats.php'; return; }
+            break;
     }
     http_response_code(404);
     header('Content-Type: application/json; charset=utf-8');
@@ -83,4 +86,4 @@ foreach ($resources as $prefix => $file) {
 
 http_response_code(404);
 echo '<!doctype html><meta charset="utf-8"><title>404</title>';
-echo '<p style="font-family:sans-serif;padding:2rem">Página no encontrada. <a href="' . e(url('/')) . '">Inicio</a></p>';
+echo '<p style="font-family:sans-serif;padding:2rem">Página no encontrada. <a href="' + "' . e(url('/')) . '" + '">Inicio</a></p>';
