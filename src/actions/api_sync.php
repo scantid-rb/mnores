@@ -34,23 +34,17 @@ $sinceBoats = $since !== '' ? $since : '0000-01-01T00:00:00.000Z';
 $sinceParts = $since !== '' ? $since : '0000-01-01T00:00:00.000Z';
 
 function fetch_boats(PDO $pdo, string $since, string $cutoff, bool $full): array {
-    if ($full) {
-        return $pdo->query(
-            'SELECT id, name, registration, is_active, updated_at, deleted_at
-             FROM boats
-             ORDER BY id'
-        )->fetchAll();
-    }
-    $st = $pdo->prepare(
+    // Los barcos se mantienen como catálogo pequeño y se sincronizan siempre
+    // como snapshot completo. Esto es necesario porque la eliminación de un
+    // barco es física (no deja tombstone en la tabla boats). Si aquí se enviara
+    // solo el delta, Android no tendría forma de saber que un barco eliminado
+    // ya no existe en el servidor.
+    return $pdo->query(
         'SELECT id, name, registration, is_active, updated_at, deleted_at
          FROM boats
-         WHERE updated_at > :s AND updated_at <= :cutoff
          ORDER BY id'
-    );
-    $st->execute([':s' => $since, ':cutoff' => $cutoff]);
-    return $st->fetchAll();
+    )->fetchAll();
 }
-
 function fetch_categories(PDO $pdo, string $since, string $cutoff, bool $full): array {
     if ($full) {
         return $pdo->query(
