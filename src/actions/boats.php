@@ -75,9 +75,12 @@ if (preg_match('#^/boats/(\d+)/delete$#', $path, $m) && $method === 'POST') {
     $b = _load_boat((int)$m[1]);
     if (!$b) { http_response_code(404); echo 'No encontrado'; return; }
     $users = (int)db()->query('SELECT COUNT(*) FROM users WHERE boat_id = ' . (int)$b['id'])->fetchColumn();
-    // Aquí también se verificaría inventario en fases posteriores.
-    if ($users > 0) {
-        $_SESSION['flash_error'] = 'No se puede eliminar: el barco tiene ' . $users . ' usuario(s) asignado(s).';
+    $parts = (int)db()->query('SELECT COUNT(*) FROM parts WHERE boat_id = ' . (int)$b['id'] . ' AND deleted_at IS NULL')->fetchColumn();
+    if ($users > 0 || $parts > 0) {
+        $reasons = [];
+        if ($users > 0) $reasons[] = $users . ' usuario(s) asignado(s)';
+        if ($parts > 0) $reasons[] = $parts . ' repuesto(s) asociado(s)';
+        $_SESSION['flash_error'] = 'No se puede eliminar: ' . implode(' y ', $reasons) . '.';
         redirect('/boats');
     }
     db()->prepare('DELETE FROM boats WHERE id=:id')->execute([':id' => $b['id']]);
