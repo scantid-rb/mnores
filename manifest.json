@@ -1,6 +1,6 @@
 {
     "kind": "app_full",
-    "app_version": "1.4.2",
+    "app_version": "1.4.3",
     "schema_version": 3,
     "created_at_utc": "2026-09-27T04:07:52+00:00",
     "sqlite_sha256": "9ed7f735a6bc93ca75e35a348577f40c9ad20019df7bc98c19513c86c758f5b8",
