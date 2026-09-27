@@ -4,11 +4,6 @@ declare(strict_types=1);
 header('Content-Type: application/json; charset=utf-8');
 
 $actor = api_require_auth();
-if (!in_array($actor['role'], [ROLE_ADMIN, ROLE_INSPECTOR], true)) {
-    http_response_code(403);
-    echo json_encode(['ok' => false, 'error' => 'No autorizado']);
-    return;
-}
 
 function api_boat_row(int $id): ?array {
     $st = db()->prepare('SELECT id, name, registration, is_active, updated_at, deleted_at FROM boats WHERE id=:id');
@@ -48,6 +43,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     }
     unset($row);
     echo json_encode(['ok' => true, 'boats' => $rows]);
+    return;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !in_array($actor['role'], [ROLE_ADMIN, ROLE_INSPECTOR], true)) {
+    http_response_code(403);
+    echo json_encode(['ok' => false, 'error' => 'No autorizado']);
     return;
 }
 
