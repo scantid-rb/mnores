@@ -1,3 +1,7 @@
+1.4.3
+- rama de desarrollo derivada de main para la Fase 3 Android/offline-first.
+- baseline funcional de 1.4.2 conservado como base.
+
 1.4.2
 -añadida opción faltante "delete" a la api de android.
 -añadidos cambios en la gestión de db.php, la api no se ejecutaba correctamente tras añadir la comprobación de idempotencia, solucionado. 
