@@ -34,7 +34,7 @@ if ($path === '/parts' && $method === 'GET') {
         $boat_id = $forcedBoat > 0 ? $forcedBoat : -1; // -1 = no ver nada
     }
 
-    $where = []; $args = [];
+    $where = ['p.deleted_at IS NULL']; $args = [];
     if ($boat_id === -1) {
         $where[] = '0=1';
     } elseif ($boat_id !== null) {
