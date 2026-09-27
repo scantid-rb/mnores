@@ -1,7 +1,7 @@
 # API de sincronización — Inventario de repuestos
 ### Contrato técnico para la app Android (offline-first)
 
-**Revisión del contrato:** 2026-09-26 — añadida actualización parcial de cantidad en `POST /api/parts/push`.
+**Revisión del contrato:** 2026-09-27 — versión API 1.4.3; fotos offline en Android usan GET/POST `/api/photos/{id}` y la actualización parcial de cantidad sigue en `POST /api/parts/push` en `POST /api/parts/push`.
 
 Este documento describe la API REST que ya existe, en funcionamiento y probada,
 sobre el backend PHP actual. Sirve como especificación exacta para construir
