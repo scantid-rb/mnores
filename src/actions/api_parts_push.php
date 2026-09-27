@@ -31,54 +31,6 @@ $rawBody = file_get_contents('php://input');
 $input = json_decode($rawBody, true);
 $changes = is_array($input['changes'] ?? null) ? $input['changes'] : [];
 
-/*
- * TEMPORARY DIAGNOSTIC LOGGING
- * - Never logs Authorization, cookies, passwords or the complete request body.
- * - Remove this block after the mobile sync issue has been fully validated.
- */
-$debugId = bin2hex(random_bytes(6));
-$debugLog = defined('DATA_DIR') ? DATA_DIR . '/debug_parts_push.log' : __DIR__ . '/../../data/debug_parts_push.log';
-
-function debug_parts_push_log(string $debugId, string $event, array $data = []): void {
-    global $debugLog;
-    $entry = array_merge([
-        'time' => gmdate('c'),
-        'debug_id' => $debugId,
-        'event' => $event,
-    ], $data);
-    @file_put_contents(
-        $debugLog,
-        json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL,
-        FILE_APPEND | LOCK_EX
-    );
-}
-
-$jsonError = json_last_error_msg();
-$operationDiagnostics = [];
-foreach ($changes as $i => $op) {
-    if (!is_array($op)) {
-        $operationDiagnostics[] = ['index' => $i, 'not_array' => true];
-        continue;
-    }
-    $operationDiagnostics[] = [
-        'index' => $i,
-        'action' => $op['action'] ?? null,
-        'id' => isset($op['id']) ? (int)$op['id'] : null,
-        'local_id' => isset($op['local_id']) ? (string)$op['local_id'] : null,
-        'boat_id' => isset($op['boat_id']) ? (int)$op['boat_id'] : null,
-        'quantity' => array_key_exists('quantity', $op) ? $op['quantity'] : null,
-        'quantity_type' => array_key_exists('quantity', $op) ? gettype($op['quantity']) : null,
-        'base_updated_at' => $op['base_updated_at'] ?? null,
-        'fields_present' => array_keys($op),
-    ];
-}
-debug_parts_push_log($debugId, 'request_received', [
-    'method' => $_SERVER['REQUEST_METHOD'] ?? null,
-    'changes_count' => count($changes),
-    'json_error' => $jsonError,
-    'operations' => $operationDiagnostics,
-]);
-
 $pdo = db();
 $results = [];
 
@@ -150,11 +102,6 @@ foreach ($changes as $c) {
                 'updated_at' => $now,
             ];
 
-            debug_parts_push_log($debugId, 'quantity_only_update', [
-                'id' => $id,
-                'quantity' => $qty,
-                'status' => $huboConflicto ? 'conflict_overwritten' : 'ok',
-            ]);
             continue;
         }
 
@@ -350,31 +297,17 @@ foreach ($changes as $c) {
 
     $results[] = ['action' => $action, 'status' => 'unknown_action'];
     } catch (Throwable $e) {
-        debug_parts_push_log($debugId, 'exception', [
-            'class' => get_class($e),
-            'message' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-            'results_so_far' => $results,
-        ]);
-
         http_response_code(500);
         echo json_encode([
             'ok' => false,
             'error' => 'server_error',
-            'debug_id' => $debugId,
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
     }
 }
 
-debug_parts_push_log($debugId, 'request_completed', [
-    'results' => $results,
-]);
-
 echo json_encode([
     'ok'          => true,
     'server_time' => api_now(),
     'results'     => $results,
-    'debug_id'    => $debugId,
 ]);
