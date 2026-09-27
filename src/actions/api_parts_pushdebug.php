@@ -13,79 +13,109 @@ declare(strict_types=1);
  * Los campos que sí gestiona: name, reference, category_id, location,
  * quantity, notes.
  *
- * Además acepta un update parcial de cantidad con:
- *   action + id + base_updated_at + quantity
- * En ese caso solo se modifica quantity.
+ * Formato esperado del cuerpo (JSON):
+ * {
+ *   "changes": [
+ *     {
+ *       "action": "update",
+ *       "id": 7,
+ *       "base_updated_at": "2026-09-24T19:54:33.136Z",   // el que tenía el móvil antes de editar
+ *       "name": "...", "reference": "...", "category_id": 26,
+ *       "location": "...", "quantity": 3, "notes": "..."
+ *     },
+ *     {
+ *       "action": "create",
+ *       "local_id": "abc-123-generado-por-el-movil",
+ *       "boat_id": 1,
+ *       "name": "...", "reference": "...", "category_id": 26,
+ *       "location": "...", "quantity": 1, "notes": "..."
+ *     }
+ *   ]
+ * }
  *
- * Esta versión utiliza tombstones para DELETE:
- * - No elimina físicamente la fila de parts.
- * - Conserva la fila con deleted_at y actualiza updated_at.
- * - /api/sync?since= puede así informar al móvil de la eliminación.
+ * Respuesta:
+ * {
+ *   "ok": true,
+ *   "server_time": "...",
+ *   "results": [
+ *     { "action": "update", "id": 7, "status": "ok", "updated_at": "..." },
+ *     { "action": "update", "id": 9, "status": "conflict_overwritten", "updated_at": "..." },
+ *     { "action": "create", "local_id": "abc-123-...", "id": 55, "status": "ok", "updated_at": "..." }
+ *   ]
+ * }
  */
 
 header('Content-Type: application/json; charset=utf-8');
 
 $actor = api_require_auth();
 
+$debugId = bin2hex(random_bytes(6));
 $rawBody = file_get_contents('php://input');
 $input = json_decode($rawBody, true);
 $changes = is_array($input['changes'] ?? null) ? $input['changes'] : [];
 
-/*
- * TEMPORARY DIAGNOSTIC LOGGING
- * - Never logs Authorization, cookies, passwords or the complete request body.
- * - Remove this block after the mobile sync issue has been fully validated.
- */
-$debugId = bin2hex(random_bytes(6));
-$debugLog = defined('DATA_DIR') ? DATA_DIR . '/debug_parts_push.log' : __DIR__ . '/../../data/debug_parts_push.log';
+$debugDir = defined('DATA_DIR') ? DATA_DIR : dirname(__DIR__, 2) . '/data';
+$debugFile = rtrim($debugDir, '/\\') . '/debug_parts_push.log';
 
-function debug_parts_push_log(string $debugId, string $event, array $data = []): void {
-    global $debugLog;
-    $entry = array_merge([
-        'time' => gmdate('c'),
-        'debug_id' => $debugId,
-        'event' => $event,
-    ], $data);
+/** Temporary diagnostic logger for Fase 2. Remove this whole block after diagnosis. */
+$debugLog = static function (string $event, array $data = []) use ($debugFile, $debugId): void {
+    $safe = ['time' => gmdate('c'), 'debug_id' => $debugId, 'event' => $event];
+    foreach ($data as $key => $value) {
+        if (is_string($value) && strlen($value) > 500) {
+            $value = substr($value, 0, 500) . '...[truncated]';
+        }
+        $safe[$key] = $value;
+    }
     @file_put_contents(
-        $debugLog,
-        json_encode($entry, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL,
+        $debugFile,
+        json_encode($safe, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL,
         FILE_APPEND | LOCK_EX
     );
-}
+};
 
-$jsonError = json_last_error_msg();
-$operationDiagnostics = [];
-foreach ($changes as $i => $op) {
-    if (!is_array($op)) {
-        $operationDiagnostics[] = ['index' => $i, 'not_array' => true];
+// Do NOT log Authorization headers, cookies, passwords or raw request bodies.
+$requestSummary = [];
+foreach ($changes as $i => $c) {
+    if (!is_array($c)) {
+        $requestSummary[] = ['index' => $i, 'type' => gettype($c)];
         continue;
     }
-    $operationDiagnostics[] = [
+    $item = [
         'index' => $i,
-        'action' => $op['action'] ?? null,
-        'id' => isset($op['id']) ? (int)$op['id'] : null,
-        'local_id' => isset($op['local_id']) ? (string)$op['local_id'] : null,
-        'boat_id' => isset($op['boat_id']) ? (int)$op['boat_id'] : null,
-        'quantity' => array_key_exists('quantity', $op) ? $op['quantity'] : null,
-        'quantity_type' => array_key_exists('quantity', $op) ? gettype($op['quantity']) : null,
-        'base_updated_at' => $op['base_updated_at'] ?? null,
-        'fields_present' => array_keys($op),
+        'action' => $c['action'] ?? null,
+        'id' => $c['id'] ?? null,
+        'local_id' => $c['local_id'] ?? null,
+        'boat_id' => $c['boat_id'] ?? null,
+        'quantity' => $c['quantity'] ?? null,
+        'quantity_type' => isset($c['quantity']) ? gettype($c['quantity']) : null,
+        'base_updated_at' => $c['base_updated_at'] ?? null,
+        'fields_present' => array_keys($c),
     ];
+    foreach (['name','reference','location','notes'] as $field) {
+        if (array_key_exists($field, $c)) {
+            $item[$field . '_type'] = gettype($c[$field]);
+            $item[$field . '_length'] = is_string($c[$field]) ? strlen($c[$field]) : null;
+        }
+    }
+    if (array_key_exists('category_id', $c)) {
+        $item['category_id'] = $c['category_id'];
+        $item['category_id_type'] = gettype($c['category_id']);
+    }
+    $requestSummary[] = $item;
 }
-debug_parts_push_log($debugId, 'request_received', [
+$debugLog('request_received', [
     'method' => $_SERVER['REQUEST_METHOD'] ?? null,
     'changes_count' => count($changes),
-    'json_error' => $jsonError,
-    'operations' => $operationDiagnostics,
+    'json_error' => json_last_error_msg(),
+    'operations' => $requestSummary,
 ]);
 
 $pdo = db();
 $results = [];
 
+try {
 foreach ($changes as $c) {
     $action = $c['action'] ?? '';
-
-    try {
 
     // ---------- EDITAR PIEZA EXISTENTE ----------
     if ($action === 'update') {
@@ -95,7 +125,7 @@ foreach ($changes as $c) {
         $current->execute([':id' => $id]);
         $row = $current->fetch();
 
-        if (!$row || !empty($row['deleted_at'])) {
+        if (!$row) {
             $results[] = ['action' => 'update', 'id' => $id, 'status' => 'not_found'];
             continue;
         }
@@ -110,53 +140,12 @@ foreach ($changes as $c) {
 
         // Si alguien más cambió la pieza mientras el móvil estaba offline,
         // lo detectamos aquí, pero igualmente aplicamos el cambio del móvil
-        // y lo anotamos como conflicto.
+        // (equipo pequeño, choques muy raros) y solo lo anotamos.
         $baseUpdatedAt = (string)($c['base_updated_at'] ?? '');
         $huboConflicto = $baseUpdatedAt !== '' && $baseUpdatedAt !== $row['updated_at'];
 
-        $hasFullField = array_key_exists('name', $c)
-            || array_key_exists('reference', $c)
-            || array_key_exists('category_id', $c)
-            || array_key_exists('location', $c)
-            || array_key_exists('notes', $c);
-
-        $quantityOnly = array_key_exists('quantity', $c) && !$hasFullField;
-
         $qty = max(0, (int)($c['quantity'] ?? 0));
         $now = api_now();
-
-        if ($quantityOnly) {
-            $pdo->prepare(
-                'UPDATE parts SET quantity=:q, updated_at=:t, deleted_at=NULL WHERE id=:id'
-            )->execute([
-                ':q' => $qty,
-                ':t' => $now,
-                ':id' => $id,
-            ]);
-
-            audit_log(
-                'part.quantity_change',
-                'part',
-                $id,
-                (int)$row['boat_id'],
-                ['quantity' => $row['quantity']],
-                ['quantity' => $qty]
-            );
-
-            $results[] = [
-                'action' => 'update',
-                'id' => $id,
-                'status' => $huboConflicto ? 'conflict_overwritten' : 'ok',
-                'updated_at' => $now,
-            ];
-
-            debug_parts_push_log($debugId, 'quantity_only_update', [
-                'id' => $id,
-                'quantity' => $qty,
-                'status' => $huboConflicto ? 'conflict_overwritten' : 'ok',
-            ]);
-            continue;
-        }
 
         if ($canEditAll) {
             $name      = trim((string)($c['name'] ?? ''));
@@ -168,7 +157,7 @@ foreach ($changes as $c) {
             $pdo->prepare(
                 'UPDATE parts SET name=:n, name_norm=:nn, reference=:r, reference_norm=:rn,
                     category_id=:c, location=:l, location_norm=:ln, quantity=:q, notes=:no,
-                    updated_at=:t, deleted_at=NULL WHERE id=:id'
+                    updated_at=:t WHERE id=:id'
             )->execute([
                 ':n' => $name, ':nn' => search_norm($name),
                 ':r' => $reference, ':rn' => search_norm($reference),
@@ -186,8 +175,10 @@ foreach ($changes as $c) {
                 audit_log('part.category_change', 'part', $id, (int)$row['boat_id'], ['category_id' => $row['category_id']], ['category_id' => $catId]);
             }
         } else {
+            // Mecánico: exactamente la misma restricción que la web.
+            // Aunque el cliente envíe otros campos, el servidor los ignora.
             $pdo->prepare(
-                'UPDATE parts SET quantity=:q, updated_at=:t, deleted_at=NULL WHERE id=:id'
+                'UPDATE parts SET quantity=:q, updated_at=:t WHERE id=:id'
             )->execute([
                 ':q' => $qty,
                 ':t' => $now, ':id' => $id,
@@ -225,19 +216,9 @@ foreach ($changes as $c) {
         $current->execute([':id' => $id]);
         $row = $current->fetch();
 
+        // Si ya no existe, el móvil puede descartar su operación pendiente.
         if (!$row) {
             $results[] = ['action' => 'delete', 'id' => $id, 'status' => 'not_found'];
-            continue;
-        }
-
-        // Un reintento de un DELETE ya aplicado debe ser idempotente.
-        if (!empty($row['deleted_at'])) {
-            $results[] = [
-                'action' => 'delete',
-                'id' => $id,
-                'status' => 'ok',
-                'updated_at' => $row['updated_at'],
-            ];
             continue;
         }
 
@@ -246,21 +227,15 @@ foreach ($changes as $c) {
             continue;
         }
 
+        // Igual que en update: detectamos si alguien modificó la pieza
+        // mientras el móvil estaba offline, pero priorizamos la operación
+        // explícita del usuario y permitimos el borrado.
         $baseUpdatedAt = (string)($c['base_updated_at'] ?? '');
         $huboConflicto = $baseUpdatedAt !== '' && $baseUpdatedAt !== $row['updated_at'];
 
-        // El archivo de foto se puede eliminar físicamente; la fila de parts
-        // se conserva como tombstone para sincronización incremental.
+        // El borrado web elimina también la fotografía asociada.
         photo_delete($id);
-
-        $now = api_now();
-        $pdo->prepare(
-            'UPDATE parts SET deleted_at=:d, updated_at=:t WHERE id=:id'
-        )->execute([
-            ':d' => $now,
-            ':t' => $now,
-            ':id' => $id,
-        ]);
+        $pdo->prepare('DELETE FROM parts WHERE id = :id')->execute([':id' => $id]);
 
         audit_log(
             'part.delete',
@@ -274,7 +249,6 @@ foreach ($changes as $c) {
             'action' => 'delete',
             'id' => $id,
             'status' => $huboConflicto ? 'conflict_overwritten' : 'ok',
-            'updated_at' => $now,
         ];
         continue;
     }
@@ -301,8 +275,11 @@ foreach ($changes as $c) {
             continue;
         }
 
+        // Idempotencia: si el móvil reintenta un create cuyo primer intento
+        // pudo llegar al servidor pero cuya respuesta se perdió, devolvemos
+        // la misma pieza en lugar de insertar un duplicado.
         $existing = $pdo->prepare(
-            'SELECT id, updated_at, deleted_at FROM parts WHERE boat_id=:b AND client_local_id=:local LIMIT 1'
+            'SELECT id, updated_at FROM parts WHERE boat_id=:b AND client_local_id=:local LIMIT 1'
         );
         $existing->execute([':b' => $boatId, ':local' => $localId]);
         $existingRow = $existing->fetch();
@@ -319,8 +296,8 @@ foreach ($changes as $c) {
 
         $pdo->prepare(
             'INSERT INTO parts (boat_id,name,name_norm,reference,reference_norm,category_id,
-                location,location_norm,quantity,notes,client_local_id,updated_at,deleted_at)
-             VALUES (:b,:n,:nn,:r,:rn,:c,:l,:ln,:q,:no,:local,:t,NULL)'
+                location,location_norm,quantity,notes,client_local_id,updated_at)
+             VALUES (:b,:n,:nn,:r,:rn,:c,:l,:ln,:q,:no,:local,:t)'
         )->execute([
             ':b' => $boatId,
             ':n' => $name, ':nn' => search_norm($name),
@@ -349,32 +326,27 @@ foreach ($changes as $c) {
     }
 
     $results[] = ['action' => $action, 'status' => 'unknown_action'];
-    } catch (Throwable $e) {
-        debug_parts_push_log($debugId, 'exception', [
-            'class' => get_class($e),
-            'message' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-            'results_so_far' => $results,
-        ]);
-
-        http_response_code(500);
-        echo json_encode([
-            'ok' => false,
-            'error' => 'server_error',
-            'debug_id' => $debugId,
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        exit;
-    }
 }
-
-debug_parts_push_log($debugId, 'request_completed', [
-    'results' => $results,
-]);
 
 echo json_encode([
     'ok'          => true,
     'server_time' => api_now(),
     'results'     => $results,
-    'debug_id'    => $debugId,
 ]);
+
+} catch (Throwable $e) {
+    $debugLog('exception', [
+        'class' => get_class($e),
+        'message' => $e->getMessage(),
+        'file' => $e->getFile(),
+        'line' => $e->getLine(),
+        'results_so_far' => $results,
+    ]);
+
+    http_response_code(500);
+    echo json_encode([
+        'ok' => false,
+        'error' => 'temporary_server_error',
+        'debug_id' => $debugId,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+}

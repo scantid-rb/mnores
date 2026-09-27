@@ -28,7 +28,8 @@ function db_init_schema(PDO $pdo): void {
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, name_norm TEXT NOT NULL UNIQUE,
         registration TEXT NOT NULL, registration_norm TEXT NOT NULL UNIQUE,
         is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')), deleted_at TEXT)");
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), deleted_at TEXT)");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL, username_norm TEXT NOT NULL UNIQUE,
         first_name TEXT NOT NULL, last_name TEXT NOT NULL, password_hash TEXT NOT NULL,
@@ -36,18 +37,22 @@ function db_init_schema(PDO $pdo): void {
         boat_id INTEGER REFERENCES boats(id) ON DELETE RESTRICT,
         is_active INTEGER NOT NULL DEFAULT 1, is_primary_admin INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')))");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS login_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, username_norm TEXT NOT NULL,
         failed_count INTEGER NOT NULL DEFAULT 0, locked_until INTEGER, updated_at INTEGER NOT NULL,
         UNIQUE (ip, username_norm))");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, name_norm TEXT NOT NULL UNIQUE,
         is_system INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')), deleted_at TEXT)");
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')), deleted_at TEXT)");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS audit_log (
         id INTEGER PRIMARY KEY AUTOINCREMENT, at_utc TEXT NOT NULL,
         actor_id INTEGER, actor_username TEXT, operation TEXT NOT NULL, object_type TEXT NOT NULL,
         object_id INTEGER, boat_id INTEGER, old_data TEXT, new_data TEXT)");
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS parts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         boat_id INTEGER NOT NULL REFERENCES boats(id) ON DELETE RESTRICT,
@@ -59,9 +64,12 @@ function db_init_schema(PDO $pdo): void {
         notes TEXT NOT NULL DEFAULT '',
         photo_path TEXT,
         client_local_id TEXT,
-        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')))");
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        deleted_at TEXT)");
+
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_boat ON parts(boat_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_search ON parts(name_norm)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_updated_at ON parts(updated_at)");
 
     // La columna client_local_id puede no existir todavía en bases antiguas.
     // No intentar crear el índice aquí hasta que db_migrate() haya añadido
@@ -73,6 +81,7 @@ function db_init_schema(PDO $pdo): void {
             ON parts(boat_id, client_local_id)
             WHERE client_local_id IS NOT NULL");
     }
+
     $pdo->exec("CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '')");
     $pdo->exec("INSERT OR IGNORE INTO categories (name, name_norm, is_system) VALUES ('Sin categoría', 'sin categoria', 1)");
@@ -95,17 +104,27 @@ function db_init_schema(PDO $pdo): void {
     // simultáneas en parts.php) — añadirle un trigger aquí se lo pisaría.
     foreach (['boats', 'categories'] as $t) {
         $pdo->exec("CREATE TRIGGER IF NOT EXISTS trg_{$t}_stamp_insert
-            AFTER INSERT ON $t BEGIN UPDATE $t SET updated_at = datetime('now') WHERE id = NEW.id; END");
+            AFTER INSERT ON $t BEGIN UPDATE $t SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id; END");
         $pdo->exec("CREATE TRIGGER IF NOT EXISTS trg_{$t}_stamp_update
-            AFTER UPDATE ON $t BEGIN UPDATE $t SET updated_at = datetime('now') WHERE id = NEW.id; END");
+            AFTER UPDATE ON $t BEGIN UPDATE $t SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = NEW.id; END");
     }
 }
 
 function db_migrate(PDO $pdo): void {
     db_init_schema($pdo);
+
     $cols = $pdo->query("PRAGMA table_info(users)")->fetchAll();
-    $has = false; foreach ($cols as $c) if ($c['name'] === 'boat_id') { $has = true; break; }
-    if (!$has) $pdo->exec("ALTER TABLE users ADD COLUMN boat_id INTEGER REFERENCES boats(id) ON DELETE RESTRICT");
+    $has = false;
+    foreach ($cols as $c) {
+        if ($c['name'] === 'boat_id') {
+            $has = true;
+            break;
+        }
+    }
+    if (!$has) {
+        $pdo->exec("ALTER TABLE users ADD COLUMN boat_id INTEGER REFERENCES boats(id) ON DELETE RESTRICT");
+    }
+
     // Normalizar name_norm de "Sin categoría" (sin acento) para búsquedas coherentes.
     $pdo->exec("UPDATE categories SET name_norm='sin categoria' WHERE is_system=1");
 
@@ -115,10 +134,64 @@ function db_migrate(PDO $pdo): void {
     // conexión devuelva la misma pieza en lugar de crear un duplicado.
     $partCols = $pdo->query("PRAGMA table_info(parts)")->fetchAll();
     $partNames = array_column($partCols, 'name');
+
     if (!in_array('client_local_id', $partNames, true)) {
         $pdo->exec("ALTER TABLE parts ADD COLUMN client_local_id TEXT");
     }
-    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_parts_boat_client_local_id ON parts(boat_id, client_local_id) WHERE client_local_id IS NOT NULL");
+
+    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS uq_parts_boat_client_local_id
+        ON parts(boat_id, client_local_id) WHERE client_local_id IS NOT NULL");
+
+    // --- Tombstones para sincronización incremental Android ---
+    // Las piezas eliminadas no se borran físicamente de inmediato. Se conserva
+    // una fila con deleted_at para que /api/sync?since= pueda informar al móvil
+    // de la eliminación y este pueda borrar su copia local.
+    $partCols = $pdo->query("PRAGMA table_info(parts)")->fetchAll();
+    $partNames = array_column($partCols, 'name');
+    if (!in_array('deleted_at', $partNames, true)) {
+        $pdo->exec("ALTER TABLE parts ADD COLUMN deleted_at TEXT");
+    }
+
+    // --- Formato temporal único ---
+    // Normalizamos timestamps antiguos con formato SQLite "YYYY-MM-DD HH:MM:SS"
+    // al formato ISO UTC con milisegundos utilizado por la API.
+    foreach (['boats', 'categories', 'parts'] as $t) {
+        $pdo->exec(
+            "UPDATE $t
+             SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', updated_at)
+             WHERE updated_at IS NOT NULL
+               AND updated_at NOT LIKE '%T%'"
+        );
+    }
+
+    // Reemplazar los triggers antiguos que utilizaban datetime('now')
+    // por triggers que producen exactamente el mismo formato ISO UTC
+    // que utiliza la API. DROP TRIGGER está soportado por SQLite y permite
+    // actualizar la definición de un trigger existente.
+    foreach (['boats', 'categories'] as $t) {
+        $pdo->exec("DROP TRIGGER IF EXISTS trg_{$t}_stamp_insert");
+        $pdo->exec("DROP TRIGGER IF EXISTS trg_{$t}_stamp_update");
+
+        $pdo->exec("CREATE TRIGGER trg_{$t}_stamp_insert
+            AFTER INSERT ON $t
+            BEGIN
+                UPDATE $t
+                SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                WHERE id = NEW.id;
+            END");
+
+        $pdo->exec("CREATE TRIGGER trg_{$t}_stamp_update
+            AFTER UPDATE ON $t
+            BEGIN
+                UPDATE $t
+                SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+                WHERE id = NEW.id;
+            END");
+    }
+
+    // Índices necesarios para el delta incremental y los tombstones.
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_updated_at ON parts(updated_at)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_deleted_at ON parts(deleted_at)");
 
     // --- Soporte API Android: columnas añadidas después del lanzamiento inicial.
     // db_init_schema() ya las crea en instalaciones nuevas; esto cubre las
@@ -126,17 +199,21 @@ function db_migrate(PDO $pdo): void {
     foreach (['boats', 'categories'] as $t) {
         $tcols = $pdo->query("PRAGMA table_info($t)")->fetchAll();
         $names = array_column($tcols, 'name');
+
         if (!in_array('updated_at', $names, true)) {
             $pdo->exec("ALTER TABLE $t ADD COLUMN updated_at TEXT");
-            $pdo->exec("UPDATE $t SET updated_at = datetime('now') WHERE updated_at IS NULL");
+            $pdo->exec("UPDATE $t SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE updated_at IS NULL");
         }
+
         if (!in_array('deleted_at', $names, true)) {
             $pdo->exec("ALTER TABLE $t ADD COLUMN deleted_at TEXT");
         }
     }
 }
 
-function is_installed(): bool { return file_exists(INSTALL_LOCK) && file_exists(DB_FILE); }
+function is_installed(): bool {
+    return file_exists(INSTALL_LOCK) && file_exists(DB_FILE);
+}
 
 /** Retorna id de "Sin categoría" */
 function system_category_id(): int {

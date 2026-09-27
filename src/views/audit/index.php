@@ -21,7 +21,7 @@ $fmtJson = function(?string $s): string {
 <section class="card" data-testid="audit-page">
     <div class="card-head">
         <h1 class="title">Auditoría</h1>
-        <span class="hint"><?= (int)$total ?> registro(s)</span>
+       
     </div>
 
     <form method="get" action="<?= e(url('/audit')) ?>" class="form-inline filters">
