@@ -125,6 +125,12 @@ if ($action === 'toggle') {
 }
 
 if ($action === 'delete') {
+    if ($actor['role'] !== ROLE_ADMIN) {
+        http_response_code(403);
+        echo json_encode(['ok' => false, 'error' => 'No autorizado']);
+        return;
+    }
+
     $users = (int)db()->query('SELECT COUNT(*) FROM users WHERE boat_id = ' . $id)->fetchColumn();
     $parts = (int)db()->query('SELECT COUNT(*) FROM parts WHERE boat_id = ' . $id . ' AND deleted_at IS NULL')->fetchColumn();
 
