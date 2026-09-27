@@ -124,5 +124,29 @@ if ($action === 'toggle') {
     return;
 }
 
+if ($action === 'delete') {
+    $users = (int)db()->query('SELECT COUNT(*) FROM users WHERE boat_id = ' . $id)->fetchColumn();
+    $parts = (int)db()->query('SELECT COUNT(*) FROM parts WHERE boat_id = ' . $id . ' AND deleted_at IS NULL')->fetchColumn();
+
+    if ($users > 0 || $parts > 0) {
+        http_response_code(409);
+        echo json_encode([
+            'ok' => false,
+            'error' => 'No se puede eliminar el barco porque todavía tiene elementos asociados.',
+            'users_count' => $users,
+            'parts_count' => $parts,
+        ]);
+        return;
+    }
+
+    db()->prepare('DELETE FROM boats WHERE id=:id')->execute([':id' => $id]);
+    audit_log('boat.delete', 'boat', $id, $id, [
+        'name' => $old['name'],
+        'registration' => $old['registration'],
+    ]);
+    echo json_encode(['ok' => true, 'deleted' => true, 'boat' => $old]);
+    return;
+}
+
 http_response_code(400);
 echo json_encode(['ok' => false, 'error' => 'Acción no válida']);
