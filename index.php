@@ -15,6 +15,10 @@ if (str_starts_with($path, '/api/')) {
         require __DIR__ . '/src/actions/api_photos.php';
         return;
     }
+    if (preg_match('#^/api/backups/[^/]+/download$#', $path)) {
+        require __DIR__ . '/src/actions/api_backups.php';
+        return;
+    }
 
     switch ($path) {
         case '/api/handshake':
