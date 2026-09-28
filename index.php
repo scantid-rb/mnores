@@ -48,6 +48,12 @@ if (str_starts_with($path, '/api/')) {
         case '/api/audit':
             if ($method === 'GET') { require __DIR__ . '/src/actions/api_audit.php'; return; }
             break;
+        case '/api/settings':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_settings.php'; return; }
+            break;
+        case '/api/status':
+            if ($method === 'GET') { require __DIR__ . '/src/actions/api_status.php'; return; }
+            break;
     }
     http_response_code(404);
     header('Content-Type: application/json; charset=utf-8');
