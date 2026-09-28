@@ -54,6 +54,12 @@ if (str_starts_with($path, '/api/')) {
         case '/api/status':
             if ($method === 'GET') { require __DIR__ . '/src/actions/api_status.php'; return; }
             break;
+        case '/api/backups':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_backups.php'; return; }
+            break;
+        case '/api/backups/restore-upload':
+            if ($method === 'POST') { require __DIR__ . '/src/actions/api_backups.php'; return; }
+            break;
     }
     http_response_code(404);
     header('Content-Type: application/json; charset=utf-8');
