@@ -17,6 +17,9 @@ if (str_starts_with($path, '/api/')) {
     }
 
     switch ($path) {
+        case '/api/handshake':
+            if ($method === 'GET') { require __DIR__ . '/src/actions/api_handshake.php'; return; }
+            break;
         case '/api/login':
             if ($method === 'POST') { require __DIR__ . '/src/actions/api_login.php'; return; }
             break;
