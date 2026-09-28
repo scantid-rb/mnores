@@ -512,6 +512,64 @@ Respuesta:
 }
 ```
 
+
+### 3.16 GET /api/backups
+
+**Auth:** sí. **Roles:** `admin`, `inspector`.
+
+Devuelve los backups disponibles en el servidor, el intervalo de auto-backup y el último resultado del mantenimiento automático.
+
+Respuesta 200:
+```json
+{
+  "ok": true,
+  "items": [
+    {
+      "name": "backup_manual_20260928_1200.zip",
+      "type": "manual",
+      "label": "Datos (manual)",
+      "size": 123456,
+      "mtime": 1780000000
+    }
+  ],
+  "interval_days": 7,
+  "last_run": 1780000000,
+  "last_failure": null
+}
+```
+
+Tipos: `manual`, `auto`, `security`, `app`.
+
+### 3.17 POST /api/backups
+
+**Auth:** sí. **Roles:** `admin`, `inspector`.
+
+Acciones:
+- `create_data`: crea un backup manual de datos (BD + fotos).
+- `create_app`: crea un backup completo de aplicación (código + datos + documentación).
+- `delete`: requiere `name` y elimina el backup del servidor.
+- `restore`: requiere `name`; solo `admin`. No permite restaurar backups de tipo `app` desde la lista.
+
+La restauración crea primero un backup de seguridad y, si tiene éxito, invalida la sesión actual.
+
+### 3.18 GET /api/backups/{name}/download
+
+**Auth:** sí. **Roles:** `admin`, `inspector`.
+
+Devuelve directamente el ZIP del backup con `Content-Type: application/zip`.
+
+### 3.19 POST /api/backups/restore-upload
+
+**Auth:** sí. **Rol:** `admin`.
+
+**Content-Type:** `multipart/form-data`.
+
+Campo: `backup`.
+
+Acepta un ZIP de backup de datos o de aplicación compatible, con un límite de 200 MB. Se valida antes de restaurar y se crea primero un backup de seguridad. Tras una restauración correcta se invalida la sesión actual.
+
+Errores principales: `400`, `401`, `403`, `422`, `500`.
+
 ## 4. Roles y permisos
 
 | Operación | admin | inspector | chief_engineer | mechanic |
@@ -606,5 +664,9 @@ La versión Android (`APP_VERSION`) es independiente de `API_VERSION`.
 | GET | `/api/settings` | Sí | Configuración del servidor (admin/inspector) |
 | POST | `/api/settings` | Sí | Modificar configuración del servidor (admin/inspector) |
 | GET | `/api/status` | Sí | Estado técnico del servidor (admin/inspector) |
+| GET | `/api/backups` | Sí | Lista de backups (admin/inspector) |
+| POST | `/api/backups` | Sí | Crear/eliminar/restaurar backups |
+| GET | `/api/backups/{name}/download` | Sí | Descargar backup |
+| POST | `/api/backups/restore-upload` | Sí | Restaurar ZIP local (admin) |
 
 **Fin del contrato API 1.4.4.**
