@@ -15,4 +15,5 @@ echo json_encode([
     'app_title'  => setting('app_title', 'Repuestos a bordo'),
     'app_version'=> APP_VERSION,
     'api_version'=> API_VERSION,
+    'installed'  => is_installed(),
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
