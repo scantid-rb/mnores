@@ -96,4 +96,4 @@ foreach ($resources as $prefix => $file) {
 
 http_response_code(404);
 echo '<!doctype html><meta charset="utf-8"><title>404</title>';
-echo '<p style="font-family:sans-serif;padding:2rem">Página no encontrada. <a href="' + "' . e(url('/')) . '" + '">Inicio</a></p>';
+echo '<p style="font-family:sans-serif;padding:2rem">Página no encontrada. <a href="' . e(url('/')) . '">Inicio</a></p>';
