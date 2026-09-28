@@ -148,52 +148,82 @@ Para modificar la API en el futuro, actualizar primero `api_contract_android.md`
 
 ## Estructura de carpetas
 
-Diagrama de la estructura "clásica" (con `public/` como DocumentRoot).
-**Esta instalación en concreto usa la variante plana** (ver "Instalación"):
-mismo contenido, pero `index.php`, `.htaccess` y `assets/` van sueltos en la
-raíz en vez de dentro de `public/`, y `src/`/`vendor/` llevan cada uno su
-propio `.htaccess` de bloqueo.
+La rama actual usa la **variante plana de despliegue** porque el hosting de
+producción (AwardSpace) no permite fijar el `DocumentRoot` a `public/`.
+Por tanto, **no existe una carpeta `public/` en el repositorio actual**:
+el front controller y los recursos públicos están en la raíz.
+
+La estructura relevante de la aplicación es:
 
 ```
-inventario/
-├── public/                    # DocumentRoot (único directorio expuesto)
-│   ├── index.php              # Front controller
-│   └── assets/style.css
+mnores/
+├── index.php                    # Front controller web/API
+├── router.php                  # Router para `php -S`
+├── .htaccess                   # Reglas de reescritura y cabeceras
+├── assets/
+│   └── style.css               # CSS de la aplicación
 ├── src/
-│   ├── config.php             # Constantes básicas y BASE_PATH
-│   ├── bootstrap.php          # Sesión, cabeceras seguridad, auto-backup
-│   ├── db.php                 # PDO + esquema + migraciones
-│   ├── auth.php               # Roles y permisos
-│   ├── csrf.php               # Token CSRF
-│   ├── audit.php              # Registro de auditoría
-│   ├── settings.php           # Configuración dinámica
-│   ├── photos.php             # Procesado de imágenes (GD)
-│   ├── backup.php             # Backups y restauración
-│   ├── parts_util.php         # Utilidades y permisos del inventario
-│   ├── helpers.php            # e(), url(), redirect(), render()
-│   ├── api_auth.php           # Carnet de acceso (token) para la app Android
-│   ├── actions/               # Un archivo por recurso
-│   │   ├── install_get.php / install_post.php
-│   │   ├── login_get.php / login_post.php / logout.php / account.php
-│   │   ├── home.php
-│   │   ├── users.php / boats.php / categories.php
-│   │   ├── parts.php / export.php
-│   │   ├── backups.php / settings.php / status.php
-│   │   ├── api_login.php / api_me.php / api_sync.php   # ver "API para Android"
-│   │   └── api_parts_push.php / api_photos.php
-│   └── views/                 # Plantillas HTML
-├── data/                      # NO accesible por HTTP (.htaccess)
-│   ├── app.sqlite             # Base de datos
-│   ├── installed.lock         # Marcador de instalación completada
-│   ├── photos/                # Fotografías (JPEG)
-│   └── backups/               # Backups automáticos, manuales y de seguridad
-├── vendor/                    # PhpSpreadsheet + dependencias
-├── router.php                 # Router para `php -S` (no usado en la variante plana)
+│   ├── .htaccess               # Bloqueo de acceso directo
+│   ├── config.php              # Versiones, BASE_PATH y configuración básica
+│   ├── bootstrap.php           # Inicialización, sesión y mantenimiento
+│   ├── db.php                  # SQLite, esquema y migraciones
+│   ├── auth.php                # Autenticación y permisos
+│   ├── api_auth.php            # Autenticación por token de la API
+│   ├── csrf.php                # Protección CSRF
+│   ├── audit.php               # Registro de auditoría
+│   ├── settings.php            # Configuración dinámica
+│   ├── photos.php              # Procesado de fotografías
+│   ├── backup.php              # Backups y restauración
+│   ├── parts_util.php          # Utilidades del inventario
+│   ├── helpers.php             # Funciones auxiliares
+│   ├── actions/                # Controladores web y endpoints API
+│   │   ├── api_login.php
+│   │   ├── api_me.php
+│   │   ├── api_sync.php
+│   │   ├── api_parts_push.php
+│   │   ├── api_photos.php
+│   │   ├── api_boats.php
+│   │   ├── api_categories.php
+│   │   ├── api_users.php
+│   │   ├── api_audit.php
+│   │   └── ...                 # Resto de acciones web
+│   └── views/                  # Plantillas HTML
+│       ├── audit/
+│       ├── backups/
+│       ├── boats/
+│       ├── categories/
+│       ├── parts/
+│       ├── settings/
+│       ├── status/
+│       ├── users/
+│       └── ...                 # Vistas simples en archivos .php
+├── data/                       # Datos persistentes; no debe exponerse por HTTP
+│   ├── .htaccess
+│   ├── app.sqlite              # Base de datos
+│   ├── installed.lock          # Marcador de instalación
+│   ├── photos/                 # Fotografías almacenadas
+│   └── backups/                # Backups
+├── vendor/                     # Dependencias de Composer
 ├── composer.json
-├── api_contract_android.md    # Contrato de la API para la app Android
+├── composer.lock
+├── manifest.json
+├── CHANGELOG.md
+├── api_contract_android.md     # Contrato de la API Android
 └── README.md
 ```
 
+### Variantes de despliegue
+
+- **Producción actual / hosting sin `DocumentRoot` configurable:** usar
+  exactamente la estructura plana anterior.
+- **Servidor propio con `DocumentRoot` configurable:** el proyecto puede
+  adaptarse para exponer solo un directorio público, pero esa **no es la
+  estructura que existe actualmente en esta rama** y no debe asumirse al
+  hacer despliegues desde Git.
+
+Los directorios `data/` y `vendor/` contienen datos/dependencias y no forman
+parte de la superficie pública de la aplicación. En la variante plana,
+`src/` y `vendor/` están protegidos mediante `.htaccess`.
 ## Creación de backup
 
 - **Manual**: menú *Backups → “Crear backup manual”*. El ZIP se nombra `backup_manual_YYYY-MM-DD_HHMM.zip` y se guarda en `data/backups/`.
