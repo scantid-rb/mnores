@@ -34,6 +34,14 @@ if (!is_array($input)) {
     return;
 }
 
+$required = array_keys(SETTINGS_DEFAULTS);
+$missing = array_values(array_diff($required, array_keys($input)));
+if ($missing) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'Faltan parámetros de configuración', 'missing' => $missing]);
+    return;
+}
+
 $new = [
     'app_name' => trim((string)($input['app_name'] ?? '')),
     'app_title' => trim((string)($input['app_title'] ?? '')),
