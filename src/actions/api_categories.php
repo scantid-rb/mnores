@@ -119,9 +119,9 @@ if ($action === 'rename') {
     }
 
     db()->prepare(
-        'UPDATE categories
+        "UPDATE categories
          SET name=:n, name_norm=:nn, updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-         WHERE id=:id'
+         WHERE id=:id"
     )->execute([
         ':n' => $name,
         ':nn' => normalize_name($name),
@@ -147,10 +147,10 @@ if ($action === 'delete') {
         $pdo->beginTransaction();
 
         $mv = $pdo->prepare(
-            'UPDATE parts
+            "UPDATE parts
              SET category_id=:sys,
                  updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
-             WHERE category_id=:id'
+             WHERE category_id=:id"
         );
         $mv->execute([':sys' => $sysId, ':id' => $id]);
         $moved = $mv->rowCount();
