@@ -42,6 +42,9 @@ if (str_starts_with($path, '/api/')) {
     case '/api/users':
             if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_users.php'; return; }
             break;
+        case '/api/audit':
+            if ($method === 'GET') { require __DIR__ . '/src/actions/api_audit.php'; return; }
+            break;
     }
     http_response_code(404);
     header('Content-Type: application/json; charset=utf-8');
