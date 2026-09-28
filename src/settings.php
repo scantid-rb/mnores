@@ -17,15 +17,12 @@ const SETTINGS_DEFAULTS = [
 ];
 
 function settings_all(): array {
-    static $cache = null;
-    if ($cache !== null) return $cache;
     $out = SETTINGS_DEFAULTS;
     try {
         foreach (db()->query('SELECT key, value FROM settings')->fetchAll() as $r) {
             $out[$r['key']] = (string)$r['value'];
         }
     } catch (Throwable $e) { /* tabla aún no existe: usar defaults */ }
-    $cache = $out;
     return $out;
 }
 
@@ -51,8 +48,6 @@ function settings_set(array $kv): void {
         }
         $pdo->commit();
     } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
-    // Invalidar caché.
-    $ref = new ReflectionFunction('settings_all');
-    // No se puede resetear la static de otra función; usamos $GLOBALS con un enfoque distinto.
-    unset($GLOBALS['__settings_cache']);
+    // La siguiente lectura debe reflejar inmediatamente los valores guardados.
+
 }
