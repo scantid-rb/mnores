@@ -1,58 +1,70 @@
-# API de sincronización — Inventario de repuestos
-### Contrato técnico para la app Android (offline-first)
+# Contrato API — Inventario de Repuestos
 
-**Revisión del contrato:** 2026-09-27 — versión API 1.4.3; fotos offline en Android usan GET/POST `/api/photos/{id}` y la actualización parcial de cantidad sigue en `POST /api/parts/push` en `POST /api/parts/push`.
+**API_VERSION:** 1.4.3  
+**APP_VERSION del servidor:** 1.4.3  
+**SCHEMA_VERSION:** 3  
+**Estado:** contrato de referencia para el cliente Android offline-first  
+**Última revisión:** 2026-09-28
 
-Este documento describe la API REST que ya existe, en funcionamiento y probada,
-sobre el backend PHP actual. Sirve como especificación exacta para construir
-la app Android (con Emergent) que consuma estos endpoints.
+Este documento define el contrato HTTP actualmente implementado por el servidor. La aplicación Android debe depender de este documento y no de detalles internos de PHP o SQLite.
 
-**URL base (entorno de desarrollo):** `http://devmn.atwebpages.com`
-*(en producción cambiará al dominio real; ningún endpoint cambia de forma,
-solo el dominio)*
+> **Regla de compatibilidad:** un cambio incompatible en rutas, métodos, campos obligatorios, semántica de sincronización, permisos o estados de respuesta requiere una nueva versión de API. Los cambios compatibles pueden permanecer en la misma versión.
 
-**Formato:** todos los endpoints devuelven JSON (`Content-Type: application/json`),
-salvo la descarga de fotos, que devuelve la imagen directamente
-(`Content-Type: image/jpeg`).
+## 1. URL base y transporte
 
-**Nota sobre HTTPS:** el entorno actual funciona por HTTP (AwardSpace no
-ofrece SSL en el plan gratuito). Es una decisión temporal y no afecta al
-diseño de la API ni de la app: si en el futuro se añade HTTPS (p. ej. vía
-Cloudflare), la app no necesita ningún cambio, solo la URL base.
+El dominio forma parte de la configuración del cliente y no del contrato. Ejemplo de desarrollo:
 
----
+`http://devmn.atwebpages.com`
 
-## 1. Autenticación
+Las rutas son relativas a la URL base: `/api/...`.
 
-La API usa un **token de acceso** (carnet), no cookies ni sesiones.
-La app debe:
-1. Pedir usuario/contraseña **una sola vez** (pantalla de login).
-2. Guardar el token recibido de forma segura (EncryptedSharedPreferences o Keystore).
-3. Enviarlo en **todas** las demás peticiones dentro de la cabecera:
-   ```
-   Authorization: Bearer <token>
-   ```
-4. Si una petición devuelve `401`, el token ya no es válido → volver a la
-   pantalla de login.
+Todas las respuestas son JSON con `Content-Type: application/json; charset=utf-8`, salvo `GET /api/photos/{id}`, que devuelve directamente un JPEG.
 
-### POST /api/login
-Inicia sesión y obtiene el token.
+El entorno actual puede funcionar por HTTP. Si posteriormente se publica detrás de HTTPS, las rutas y formatos no cambian.
 
-**Request body (JSON):**
+## 2. Autenticación
+
+La API usa **Bearer tokens**, no cookies ni CSRF.
+
+Cabecera:
+
+`Authorization: Bearer <token>`
+
+El token:
+- se genera con 32 bytes aleatorios;
+- se almacena en el servidor como SHA-256;
+- puede identificarse mediante `device_label`;
+- puede revocarse individualmente;
+- deja de ser válido si el usuario está inactivo o el token está revocado.
+
+El cliente debe guardar el token de forma segura.
+
+Errores:
+- `401`: token ausente, inválido, revocado o usuario inactivo.
+- `429`: demasiados intentos fallidos de login.
+
+## 3. Endpoints
+
+### 3.1 POST /api/login
+
+Obtiene un token.
+
+Request:
 ```json
 {
   "username": "isidro",
-  "password": "contraseña-del-usuario",
-  "device_label": "Pixel 7 - Isidro"
+  "password": "contraseña",
+  "device_label": "Android - Isidro"
 }
 ```
-`device_label` es opcional pero recomendable (identifica qué móvil generó el token, útil para revocar accesos concretos en el futuro).
 
-**Response 200 (éxito):**
+`device_label` es opcional.
+
+Respuesta 200:
 ```json
 {
   "ok": true,
-  "token": "22e0bf09490e90844e32b7be7700ae1b758ed40e46ca7eeb552e79f4a5a952b2",
+  "token": "<token>",
   "user": {
     "id": 2,
     "username": "Isidro",
@@ -62,279 +74,425 @@ Inicia sesión y obtiene el token.
 }
 ```
 
-**Response 401 (credenciales incorrectas):**
-```json
-{ "ok": false, "error": "Usuario o contraseña incorrectos" }
-```
+Errores: `400` datos requeridos, `401` credenciales incorrectas, `429` bloqueo por fuerza bruta.
 
-**Response 429 (demasiados intentos fallidos):**
-```json
-{ "ok": false, "error": "Demasiados intentos, inténtalo más tarde" }
-```
+### 3.2 GET /api/me
 
-### GET /api/me
-Comprueba si el token sigue siendo válido y quién es el usuario.
-Útil al abrir la app, para saber si hay que pedir login de nuevo.
+**Auth:** sí.
 
-**Headers:** `Authorization: Bearer <token>`
-
-**Response 200:**
-```json
-{ "ok": true, "user": { "id": 2, "username": "Isidro", "role": "chief_engineer", "boat_id": 1 } }
-```
-
-**Response 401:** `{ "ok": false, "error": "No autorizado" }` → token inválido/caducado.
-
----
-
-## 2. Roles y visibilidad (importante para la app)
-
-| Rol | Ve piezas de |
-|---|---|
-| `admin`, `inspector` | Los 6 barcos |
-| `chief_engineer`, `mechanic` | Solo su propio `boat_id` |
-
-El servidor **ya aplica este filtro automáticamente** en `/api/sync` y
-**ya rechaza** (con `status: "forbidden"`) intentos de crear/editar piezas
-fuera del barco del usuario. La app no necesita reimplementar esta lógica,
-pero sí debería ocultar en su interfaz la opción de elegir barco cuando el
-rol no sea `admin`/`inspector` (para no confundir al usuario con acciones
-que el servidor luego rechazará).
-
----
-
-## 3. Descargar datos: GET /api/sync
-
-Dos usos:
-
-**a) Primera sincronización (sin conexión previa):** llamar sin parámetros.
-```
-GET /api/sync
-```
-Devuelve **todo** lo visible para ese usuario: barcos, categorías y piezas.
-
-**b) Sincronizaciones siguientes:** llamar con la fecha de la última sync
-(la app debe guardar el `server_time` que recibió la última vez y
-mandarlo aquí):
-```
-GET /api/sync?since=2026-09-25T00:15:55.392Z
-```
-Devuelve solo lo que cambió desde esa fecha — incluidas las filas
-borradas (`deleted_at` no nulo), para que la app las borre también de su
-copia local.
-
-**Headers:** `Authorization: Bearer <token>`
-
-**Response 200:**
+Respuesta 200:
 ```json
 {
   "ok": true,
-  "server_time": "2026-09-25T00:57:23.975Z",
-  "boats": [
-    { "id": 1, "name": "Ivan Nores", "registration": "EBBR", "is_active": 1, "updated_at": "...", "deleted_at": null }
-  ],
-  "categories": [
-    { "id": 26, "name": "Electricidad", "is_system": 0, "updated_at": "...", "deleted_at": null }
-  ],
-  "parts": [
-    {
-      "id": 1, "boat_id": 1, "name": "Disyuntor", "reference": "Gv2p14",
-      "category_id": 26, "location": "Taquilla 1", "quantity": 4,
-      "notes": "Disyuntor de 6 amperios",
-      "photo_path": "/srv/disk18/.../1.jpg",
-      "updated_at": "2026-09-24T19:54:33.136Z"
-    }
-  ]
+  "user": {
+    "id": 2,
+    "username": "Isidro",
+    "role": "chief_engineer",
+    "boat_id": 1
+  }
 }
 ```
 
-**Importante sobre `photo_path`:** ese valor es una ruta interna del
-servidor, **no** una URL descargable. Para la foto, la app debe construir
-la URL ella misma así:
-```
-GET {URL_BASE}/api/photos/{id}
-```
-usando el `id` de la pieza (no el `photo_path`). Si el campo `photo_path`
-es `null`, la pieza no tiene foto.
+### 3.3 GET /api/sync
 
-**Guardar tras cada sync:** la app debe guardar el `server_time` recibido,
-para usarlo como `since` en la siguiente llamada.
+**Auth:** sí.
 
----
+Sin `since`: sincronización completa.
 
-## 4. Subir cambios: POST /api/parts/push
+Con `since`:
+`GET /api/sync?since=2026-09-25T00:15:55.392Z`
 
-Para piezas **creadas, editadas o eliminadas offline**. Se puede mandar un lote con
-varios cambios de golpe al recuperar conexión.
+El servidor captura `server_time` **antes de leer los datos**. El cliente debe guardar exactamente ese valor y usarlo como `since` en la siguiente sincronización.
 
-**Headers:** `Authorization: Bearer <token>`, `Content-Type: application/json`
-
-**Request body:**
+Respuesta:
 ```json
 {
-  "changes": [
+  "ok": true,
+  "server_time": "2026-09-28T00:57:23.975Z",
+  "boats": [],
+  "categories": [],
+  "parts": []
+}
+```
+
+#### Boats
+
+Los barcos se entregan como **snapshot completo en cada llamada**, incluso con `since`. Esto es intencionado porque su borrado es físico y no existe un tombstone persistente.
+
+Campos:
+```json
+{
+  "id": 1,
+  "name": "Ivan Nores",
+  "registration": "EBBR",
+  "is_active": 1,
+  "updated_at": "2026-09-28T00:00:00.000Z",
+  "deleted_at": null
+}
+```
+
+#### Categories
+
+En sincronización completa se entrega el catálogo completo.
+
+En incremental se entregan categorías con:
+`since < updated_at <= server_time`
+
+Campos:
+```json
+{
+  "id": 26,
+  "name": "Electricidad",
+  "is_system": 0,
+  "updated_at": "2026-09-28T00:00:00.000Z",
+  "deleted_at": null
+}
+```
+
+**Particularidad actual:** el borrado administrativo de una categoría es físico, después de mover sus piezas a “Sin categoría”. Por ello la desaparición de una categoría no se representa como tombstone en un delta. Para reconciliar el catálogo tras un borrado se puede usar `GET /api/categories` o una sincronización completa.
+
+#### Parts
+
+En completa se entregan todas las piezas visibles.
+
+En incremental:
+`since < updated_at <= server_time`
+
+Las piezas eliminadas mediante `/api/parts/push` permanecen como **tombstones**, con `deleted_at != null`. El cliente debe eliminar su copia local.
+
+Campos:
+```json
+{
+  "id": 58,
+  "boat_id": 1,
+  "name": "Filtro de aceite",
+  "reference": "FA-220",
+  "category_id": 32,
+  "location": "Sala de máquinas",
+  "quantity": 2,
+  "notes": "",
+  "photo_path": "/ruta/interna/58.jpg",
+  "updated_at": "2026-09-28T00:00:00.000Z",
+  "deleted_at": null,
+  "client_local_id": "uuid-del-movil"
+}
+```
+
+`photo_path` es una ruta interna y **no debe utilizarse como URL**. La foto se obtiene con `GET /api/photos/{id}`.
+
+### 3.4 POST /api/parts/push
+
+**Auth:** sí. **Content-Type:** `application/json`.
+
+`changes` es un array y cada cambio se procesa independientemente.
+
+#### update completo
+
+Campos:
+- `action: "update"`
+- `id`
+- `base_updated_at`
+- `name`
+- `reference`
+- `category_id`
+- `location`
+- `quantity`
+- `notes`
+
+#### update parcial de quantity
+
+```json
+{
+  "action": "update",
+  "id": 9,
+  "base_updated_at": "2026-09-24T19:54:33.136Z",
+  "quantity": 4
+}
+```
+
+Cuando solo se proporciona `quantity`, se modifica únicamente esa columna y `updated_at`. Es la modalidad destinada especialmente a `mechanic` y a los botones +/−.
+
+#### Conflictos
+
+`base_updated_at` representa la versión que tenía el cliente antes de editar.
+
+Si no coincide con el `updated_at` actual, el servidor aplica el cambio igualmente y devuelve `conflict_overwritten`. La política actual prioriza el último cambio recibido por simplicidad operativa.
+
+#### create
+
+```json
+{
+  "action": "create",
+  "local_id": "uuid-generado-en-el-movil",
+  "boat_id": 1,
+  "name": "Filtro de aceite",
+  "reference": "FA-220",
+  "category_id": 32,
+  "location": "Sala de máquinas",
+  "quantity": 2,
+  "notes": ""
+}
+```
+
+`local_id` es obligatorio para altas offline. La combinación `boat_id + local_id` es única cuando `local_id` no es nulo.
+
+Repetir un alta después de perder la respuesta devuelve la pieza existente en lugar de crear un duplicado.
+
+#### delete
+
+```json
+{
+  "action": "delete",
+  "id": 12,
+  "base_updated_at": "2026-09-24T19:54:33.136Z"
+}
+```
+
+El borrado de piezas es lógico: se establece `deleted_at`, se actualiza `updated_at`, se elimina la foto y la fila permanece como tombstone.
+
+Un DELETE repetido sobre una pieza ya eliminada devuelve `ok`.
+
+Respuesta 200:
+```json
+{
+  "ok": true,
+  "server_time": "2026-09-28T01:00:00.123Z",
+  "results": [
     {
       "action": "update",
       "id": 7,
-      "base_updated_at": "2026-09-24T19:54:33.136Z",
-      "name": "Disyuntor 6A",
-      "reference": "Gv2p14",
-      "category_id": 26,
-      "location": "Taquilla 1",
-      "quantity": 3,
-      "notes": "Quedan pocos"
-    },
-    {
-      "action": "update",
-      "id": 9,
-      "base_updated_at": "2026-09-24T19:54:33.136Z",
-      "quantity": 4
-    },
-    {
-      "action": "create",
-      "local_id": "uuid-generado-en-el-movil",
-      "boat_id": 1,
-      "name": "Filtro de aceite",
-      "reference": "FA-220",
-      "category_id": 32,
-      "location": "Sala de máquinas",
-      "quantity": 2,
-      "notes": ""
-    },
-    {
-      "action": "delete",
-      "id": 12,
-      "base_updated_at": "2026-09-24T19:54:33.136Z"
+      "status": "ok",
+      "updated_at": "2026-09-28T01:00:00.123Z"
     }
   ]
 }
 ```
 
-### Update parcial de cantidad
+Estados:
+| Estado | Significado | Acción del cliente |
+|---|---|---|
+| `ok` | Aplicado | Retirar de la cola |
+| `conflict_overwritten` | Aplicado pese a conflicto | Retirar de la cola; informar opcionalmente |
+| `forbidden` | Sin permiso | No reintentar |
+| `not_found` | Pieza inexistente | Retirar de la cola |
+| `invalid` | Datos inválidos | Retirar de la cola y mostrar error |
+| `unknown_action` | Acción no soportada | Tratar como error de protocolo |
 
-Para cambios rápidos de cantidad, la app puede enviar únicamente los campos
-necesarios:
+### 3.5 GET /api/photos/{id}
 
-```json
-{
-  "changes": [
-    {
-      "action": "update",
-      "id": 9,
-      "base_updated_at": "2026-09-24T19:54:33.136Z",
-      "quantity": 4
-    }
-  ]
-}
-```
+**Auth:** sí.
 
-El servidor conserva todos los demás campos de la pieza y actualiza solo
-`quantity` y `updated_at`.
+Devuelve JPEG directamente con HTTP 200.
 
-- `action: "update"` → requiere `id` (de la pieza) y `base_updated_at`
-  (el `updated_at` que la app tenía guardado de esa pieza **antes** de
-  editarla offline; sirve para detectar si alguien más la cambió mientras
-  tanto).
-- `action: "update"` admite dos formas:
-  1. **Actualización completa**, enviando `name`, `reference`, `category_id`,
-     `location`, `quantity` y `notes`. Se actualizan todos esos campos.
-  2. **Actualización parcial de cantidad**, enviando únicamente `quantity`
-     además de `action`, `id` y `base_updated_at`. En este caso el servidor
-     modifica **solo `quantity`** y conserva sin cambios `name`, `reference`,
-     `category_id`, `location` y `notes`. Esta forma está pensada
-     especialmente para los cambios rápidos de cantidad (`+` / `−`) y para
-     el rol `mechanic`, que solo tiene permiso para modificar cantidad.
-- En ambos tipos de `update`, `base_updated_at` se compara con el
-  `updated_at` actual del servidor. Si no coincide, el cambio se aplica
-  igualmente y se devuelve `status: "conflict_overwritten"`.
-- `action: "create"` → requiere `local_id` (un identificador que la app
-  se inventa, tipo UUID, para poder emparejar la respuesta) y `boat_id`.
-  **No** manda fotos aquí (ver sección 5).
-  `local_id` es idempotente dentro de cada `boat_id`: si el servidor ya
-  recibió ese mismo alta pero la respuesta se perdió, un reintento devuelve
-  el mismo `id` real con `status: "ok"` y no crea un duplicado.
+Errores:
+- `403`: sin permiso para ver la pieza.
+- `404`: pieza inexistente o sin foto.
 
-**Response 200:**
+### 3.6 POST /api/photos/{id}
+
+**Auth:** sí. **Content-Type:** `multipart/form-data`.
+
+Campo: `photo`.
+
+No usa JSON ni base64.
+
+Límites de entrada: máximo 8 MB; JPEG/PNG/GIF/WEBP. El servidor convierte a JPEG y redimensiona como la interfaz web.
+
+Respuesta 200:
 ```json
 {
   "ok": true,
-  "server_time": "...",
-  "results": [
-    { "action": "update", "id": 7, "status": "ok", "updated_at": "..." },
-    { "action": "create", "local_id": "uuid-generado-en-el-movil", "id": 58, "status": "ok", "updated_at": "..." },
-    { "action": "delete", "id": 12, "status": "ok" }
+  "updated_at": "2026-09-28T01:10:00.000Z"
+}
+```
+
+Errores: `403`, `404`, `422`, `405`.
+
+### 3.7 GET /api/boats
+
+Devuelve el catálogo de barcos.
+
+Respuesta 200:
+```json
+{
+  "ok": true,
+  "boats": [
+    {
+      "id": 1,
+      "name": "Ivan Nores",
+      "registration": "EBBR",
+      "is_active": 1,
+      "updated_at": "...",
+      "deleted_at": null
+    }
   ]
 }
 ```
 
-**Valores posibles de `status` por cada cambio:**
-| status | Significado | Qué debe hacer la app |
-|---|---|---|
-| `ok` | Se aplicó correctamente | Marcar como sincronizado; si era `create`, sustituir el `local_id` por el `id` real |
-| `conflict_overwritten` | Alguien más había cambiado la pieza mientras estabas offline, pero tu cambio se aplicó igualmente (equipo pequeño, se prioriza simplicidad) | Opcional: avisar al usuario, no bloqueante |
-| `forbidden` | El usuario no tiene permiso sobre esa pieza/barco | Mostrar error, no reintentar |
-| `not_found` | La pieza (`id`) ya no existe | Descartar el cambio local |
-| `invalid` | Faltan datos obligatorios o `id` no válido | Mostrar error de validación al usuario |
+### 3.8 POST /api/boats
 
----
+Solo `admin` e `inspector`.
 
-## 5. Fotos: GET/POST /api/photos/{id}
+Acciones:
+- `create`: `name`, `registration`, `is_active`.
+- `update`: `id`, `name`, `registration`, `is_active`.
+- `toggle`: `id`.
+- `delete`: solo `admin`; se rechaza si existen usuarios o piezas activas asociadas.
 
-`{id}` es el `id` de la pieza (no un id de foto separado — cada pieza
-tiene como mucho una foto).
+Errores principales: `403`, `404`, `409`, `422`, `405`.
 
-### Descargar
-```
-GET /api/photos/7
-Authorization: Bearer <token>
-```
-Devuelve la imagen JPEG directamente. `404` si la pieza no tiene foto.
+### 3.9 GET /api/categories
 
-### Subir / reemplazar
-```
-POST /api/photos/7
-Authorization: Bearer <token>
-Content-Type: multipart/form-data
-```
-Campo del formulario: **`photo`** (el archivo de imagen). Igual que un
-formulario HTML normal — no se manda en JSON ni en base64.
+Devuelve categorías no eliminadas.
 
-Límites: máx. 8 MB, formatos admitidos JPEG/PNG/GIF/WEBP (el servidor la
-convierte y comprime a JPEG automáticamente).
+### 3.10 POST /api/categories
 
-**Response 200:**
+Solo `admin` e `inspector`.
+
+Acciones:
+- `create`
+- `rename`
+- `delete`
+
+“Sin categoría” es una categoría de sistema y no puede renombrarse ni eliminarse.
+
+Al eliminar una categoría normal, sus piezas se trasladan a “Sin categoría” y la categoría se elimina físicamente.
+
+Errores principales: `403`, `404`, `409`, `422`, `500`, `405`.
+
+### 3.11 GET /api/users
+
+Devuelve los usuarios visibles para el actor:
+- admin/inspector: según las reglas generales de gestión;
+- chief_engineer: mechanics de su barco;
+- mechanic: él mismo.
+
+### 3.12 POST /api/users
+
+Gestiona usuarios según permisos.
+
+Roles: `admin`, `inspector`, `chief_engineer`, `mechanic`.
+
+Contraseñas: mínimo 8 caracteres.
+
+El administrador principal no puede eliminarse ni desactivarse. El jefe de máquinas queda limitado a mechanics de su propio barco; el servidor fuerza ese rol y barco.
+
+### 3.13 GET /api/audit
+
+Solo `admin` e `inspector`.
+
+Parámetros:
+- `page`: mínimo 1.
+- `per_page`: 10–100, por defecto 50.
+- `operation`: filtro exacto.
+- `object_type`: filtro exacto.
+- `actor_username`: filtro exacto.
+
+Respuesta:
 ```json
-{ "ok": true, "updated_at": "2026-09-25T01:10:00.000Z" }
+{
+  "ok": true,
+  "rows": [],
+  "page": 1,
+  "per_page": 50,
+  "total": 0,
+  "pages": 1,
+  "operations": [],
+  "object_types": [],
+  "actors": []
+}
 ```
 
-**Response 403:** sin permiso sobre esa pieza (rol/barco).
-**Response 422:** imagen inválida o demasiado grande, con `"error"` describiendo el motivo.
+## 4. Roles y permisos
 
-**Comportamiento offline decidido:** cuando el usuario haga/cambie una
-foto sin conexión, la app debe guardarla localmente y subirla
-**automáticamente** en cuanto detecte conexión (sin pedir confirmación al
-usuario).
+| Operación | admin | inspector | chief_engineer | mechanic |
+|---|---:|---:|---:|---:|
+| Login / me / sync | ✓ | ✓ | ✓ | ✓ |
+| Ver piezas | Todos | Todos | Su barco | Su barco |
+| Crear pieza | ✓ | ✓ | Su barco | — |
+| Editar campos | ✓ | ✓ | Su barco | — |
+| Cambiar quantity | ✓ | ✓ | Su barco | Su barco |
+| Eliminar pieza | ✓ | ✓ | Su barco | — |
+| Ver/subir foto | ✓ | ✓ | Su barco | Su barco |
+| Gestionar barcos | ✓ | ✓ | — | — |
+| Eliminar barco | ✓ | — | — | — |
+| Gestionar categorías | ✓ | ✓ | — | — |
+| Gestionar usuarios | Según reglas | Según reglas | Mechanics de su barco | — |
+| Consultar auditoría API | ✓ | ✓ | — | — |
 
----
+El servidor es la autoridad final de permisos.
 
-## 6. Resumen de errores comunes
+## 5. Modelo de sincronización
 
-| HTTP | Significado |
-|---|---|
-| 401 | Token ausente, inválido o caducado → pedir login de nuevo |
-| 403 | Token válido, pero sin permiso para esa acción/barco |
-| 404 | Recurso no encontrado (pieza, foto) |
-| 422 | Datos inválidos en la petición |
-| 429 | Demasiados intentos de login fallidos |
+1. `POST /api/login`
+2. Guardar token.
+3. `GET /api/sync` sin `since`.
+4. Guardar datos y `server_time`.
+5. Trabajar offline sobre la base local.
+6. Encolar altas, cambios y borrados.
+7. Al recuperar conexión:
+   1. `POST /api/parts/push`;
+   2. procesar cada resultado;
+   3. subir fotografías pendientes;
+   4. `GET /api/sync?since=<último server_time>`;
+   5. aplicar cambios entrantes;
+   6. guardar el nuevo `server_time`.
 
----
+Nunca avanzar el cursor antes de haber procesado correctamente la respuesta.
 
-## 7. Flujo recomendado para la app
+Nunca generar el `id` global de una pieza en el cliente: solo `local_id`.
 
-1. Login → guardar token.
-2. `GET /api/sync` (sin `since`) → guardar todo localmente (SQLite/Room) + guardar `server_time`.
-3. Uso normal offline: leer/editar/crear desde la base local; cada cambio se encola.
-4. Al detectar conexión:
-   - `POST /api/parts/push` con la cola de cambios pendientes (create/update/delete).
-   - Para cada pieza con foto pendiente de subir → `POST /api/photos/{id}`.
-   - `GET /api/sync?since=<último server_time>` → aplicar cambios entrantes, guardar el nuevo `server_time`.
+## 6. Timestamps
+
+Formato:
+`YYYY-MM-DDTHH:mm:ss.SSSZ`
+
+Todos son UTC. `base_updated_at` debe conservar exactamente el valor recibido.
+
+## 7. Errores generales
+
+Forma habitual:
+```json
+{
+  "ok": false,
+  "error": "Descripción"
+}
+```
+
+El cliente debe basar la lógica en el código HTTP y en la estructura de respuesta, no en textos concretos de error.
+
+## 8. Evolución y compatibilidad
+
+No se deben cambiar sin aumentar `API_VERSION`:
+- rutas;
+- métodos;
+- campos obligatorios;
+- semántica de `since`/ `server_time`;
+- semántica de `local_id`;
+- estados de `/api/parts/push`;
+- reglas de conflicto;
+- estructura básica de respuestas.
+
+Se pueden añadir campos opcionales a respuestas si los clientes antiguos pueden ignorarlos.
+
+La versión Android (`APP_VERSION`) es independiente de `API_VERSION`.
+
+## 9. Resumen de rutas
+
+| Método | Ruta | Auth | Función |
+|---|---|---|---|
+| POST | `/api/login` | No | Token |
+| GET | `/api/me` | Sí | Identidad |
+| GET | `/api/sync` | Sí | Sincronización |
+| POST | `/api/parts/push` | Sí | Cambios offline |
+| GET | `/api/photos/{id}` | Sí | Descargar foto |
+| POST | `/api/photos/{id}` | Sí | Subir/reemplazar foto |
+| GET | `/api/boats` | Sí | Catálogo barcos |
+| POST | `/api/boats` | Sí | Gestionar barcos |
+| GET | `/api/categories` | Sí | Catálogo categorías |
+| POST | `/api/categories` | Sí | Gestionar categorías |
+| GET | `/api/users` | Sí | Consultar usuarios |
+| POST | `/api/users` | Sí | Gestionar usuarios |
+| GET | `/api/audit` | Sí | Auditoría |
+
+**Fin del contrato API 1.4.3.**
