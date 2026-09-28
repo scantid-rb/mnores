@@ -397,6 +397,95 @@ Contraseñas: mínimo 8 caracteres.
 
 El administrador principal no puede eliminarse ni desactivarse. El jefe de máquinas queda limitado a mechanics de su propio barco; el servidor fuerza ese rol y barco.
 
+### 3.13 GET /api/settings
+
+**Auth:** sí. **Roles:** `admin`, `inspector`.
+
+Devuelve la configuración dinámica del servidor que también se puede modificar desde la web.
+
+Respuesta 200:
+```json
+{
+  "ok": true,
+  "settings": {
+    "app_name": "Inventario de Repuestos",
+    "app_title": "Repuestos a bordo",
+    "company_name": "",
+    "backup_interval_days": "7",
+    "backup_retention_days": "7",
+    "audit_retention_days": "90",
+    "disk_warning_percent": "20"
+  }
+}
+```
+
+Los valores se devuelven como cadenas porque la tabla de configuración del servidor utiliza pares clave/valor. El cliente debe convertir a número los cuatro parámetros numéricos.
+
+### 3.14 POST /api/settings
+
+**Auth:** sí. **Roles:** `admin`, `inspector`.
+
+**Content-Type:** `application/json`.
+
+El cliente debe enviar los 7 parámetros. No se admiten actualizaciones parciales.
+
+Validaciones:
+- `app_name`: obligatorio, máximo 80 caracteres.
+- `app_title`: obligatorio, máximo 80 caracteres.
+- `company_name`: máximo 120 caracteres.
+- `backup_interval_days`: 1–365.
+- `backup_retention_days`: 1–365.
+- `audit_retention_days`: 1–3650.
+- `disk_warning_percent`: 0–90.
+
+Respuesta 200: `{ "ok": true, "settings": { ... } }`.
+
+Errores: `400` JSON/parámetros inválidos, `401` no autenticado, `403` rol no autorizado, `422` valores inválidos.
+
+Cada modificación genera una entrada de auditoría `settings.update`.
+
+### 3.15 GET /api/status
+
+**Auth:** sí. **Roles:** `admin`, `inspector`.
+
+Devuelve el estado técnico del servidor para la pantalla de diagnóstico de Android.
+
+Respuesta 200:
+```json
+{
+  "ok": true,
+  "app_version": "1.4.4",
+  "api_version": "1.4.4",
+  "schema_version": 3,
+  "sqlite_integrity": "ok",
+  "database_size_bytes": 123456,
+  "disk": {
+    "free_bytes": 123456789,
+    "total_bytes": 5000000000,
+    "free_percent": 2.47,
+    "warning_percent": 20,
+    "warning": true
+  },
+  "backup": {
+    "last_auto": { "name": "backup_auto_20260928.zip", "mtime": 1780000000 },
+    "last_run": 1780000000,
+    "last_failure": null
+  },
+  "directories": {
+    "data": true,
+    "data/photos": true,
+    "data/backups": true,
+    "index.php": true,
+    "assets": true,
+    "vendor": true
+  }
+}
+```
+
+Los tamaños están expresados en bytes. `free_percent` es un porcentaje numérico y `warning` usa el umbral configurado en el servidor.
+
+Errores: `401` no autenticado, `403` rol no autorizado.
+
 ### 3.13 GET /api/audit
 
 Solo `admin` e `inspector`.
@@ -514,5 +603,8 @@ La versión Android (`APP_VERSION`) es independiente de `API_VERSION`.
 | GET | `/api/users` | Sí | Consultar usuarios |
 | POST | `/api/users` | Sí | Gestionar usuarios |
 | GET | `/api/audit` | Sí | Auditoría |
+| GET | `/api/settings` | Sí | Configuración del servidor (admin/inspector) |
+| POST | `/api/settings` | Sí | Modificar configuración del servidor (admin/inspector) |
+| GET | `/api/status` | Sí | Estado técnico del servidor (admin/inspector) |
 
-**Fin del contrato API 1.4.3.**
+**Fin del contrato API 1.4.4.**
