@@ -1,7 +1,7 @@
 # Contrato API — Inventario de Repuestos
 
-**API_VERSION:** 1.4.3  
-**APP_VERSION del servidor:** 1.4.3  
+**API_VERSION:** 1.4.4  
+**APP_VERSION del servidor:** 1.4.4  
 **SCHEMA_VERSION:** 3  
 **Estado:** contrato de referencia para el cliente Android offline-first  
 **Última revisión:** 2026-09-28
@@ -14,7 +14,7 @@ Este documento define el contrato HTTP actualmente implementado por el servidor.
 
 El dominio forma parte de la configuración del cliente y no del contrato. Ejemplo de desarrollo:
 
-`http://devmn.atwebpages.com`
+`https://devmn.atwebpages.com`
 
 Las rutas son relativas a la URL base: `/api/...`.
 
@@ -44,6 +44,26 @@ Errores:
 - `429`: demasiados intentos fallidos de login.
 
 ## 3. Endpoints
+
+### 3.0 GET /api/handshake
+
+**Auth:** no. Este endpoint es público y se utiliza antes de guardar una nueva URL de servidor.
+
+La respuesta identifica el servidor y permite al cliente comprobar que está inicializado y que utiliza la misma versión de API que el cliente.
+
+Respuesta 200:
+```json
+{
+  "ok": true,
+  "app_name": "Inventario de Repuestos",
+  "app_title": "Repuestos a bordo",
+  "app_version": "1.4.4",
+  "api_version": "1.4.4",
+  "installed": true
+}
+```
+
+El cliente debe rechazar el cambio de servidor si `installed` es `false` o si `api_version` no coincide con la versión de API que requiere la aplicación.
 
 ### 3.1 POST /api/login
 
