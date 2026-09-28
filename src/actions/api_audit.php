@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-$actor = require_role([ROLE_ADMIN, ROLE_INSPECTOR]);
+$actor = require_role([ROLE_ADMIN, ROLE_INSPECTOR], JSON_UNESCAPED_UNICODE);
 
 $page = max(1, (int)($_GET['page'] ?? 1));
 $perPage = min(100, max(10, (int)($_GET['per_page'] ?? 50)));
@@ -92,7 +92,8 @@ $actors = db()->query(
      ORDER BY actor_username COLLATE NOCASE"
 )->fetchAll(PDO::FETCH_COLUMN);
 
-json_response([
+header('Content-Type: application/json; charset=utf-8');
+echo json_encode([
     'ok' => true,
     'rows' => $rows,
     'page' => $page,
