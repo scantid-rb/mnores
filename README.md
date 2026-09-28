@@ -101,69 +101,50 @@ Los cambios se aplican inmediatamente en la siguiente petición.
 
 ## API para la app Android (offline)
 
-**Estado del contrato:** actualizado el 26/09/2026. `POST /api/parts/push` admite ahora actualizaciones parciales de cantidad.
+**Contrato:** API 1.4.3  
+**Servidor:** APP_VERSION 1.4.3  
+**Esquema:** SCHEMA_VERSION 3  
+**Contrato completo:** `api_contract_android.md`
 
-Además de la web, la aplicación expone un pequeño conjunto de rutas
-`/api/...` pensadas exclusivamente para dar servicio a una app Android
-nativa que funciona **offline-first** (ve/edita/crea repuestos sin
-conexión, y sincroniza al recuperarla).
+El servidor expone una API REST destinada al cliente Android offline-first. El contrato completo define rutas, métodos, autenticación, permisos, sincronización, conflictos, idempotencia, fotografías, usuarios, barcos, categorías y auditoría.
 
-**El contrato completo y detallado está en `api_contract_android.md`**
-(formato exacto de cada petición/respuesta, reglas de permisos, flujo de
-sincronización recomendado). Esa es la referencia a mantener actualizada
-si se añade o cambia algún endpoint — este README solo da el resumen.
+### Rutas disponibles
 
-| Endpoint | Método | Qué hace |
+| Método | Endpoint | Función |
 |---|---|---|
-| `/api/login` | POST | Da un carnet de acceso (token) a partir de usuario/contraseña |
-| `/api/me` | GET | Confirma si el token sigue siendo válido y quién es el usuario |
-| `/api/sync` | GET | Baja barcos/categorías/piezas — todo, o solo lo cambiado desde una fecha (`?since=`) |
-| `/api/parts/push` | POST | Sube piezas creadas/editadas/eliminadas offline; admite updates completos y updates parciales de `quantity` |
-| `/api/photos/{id}` | GET/POST | Descarga o sube la foto de una pieza |
+| POST | `/api/login` | Obtener token |
+| GET | `/api/me` | Validar token e identidad |
+| GET | `/api/sync` | Sincronización completa/incremental |
+| POST | `/api/parts/push` | Subir cambios offline de piezas |
+| GET/POST | `/api/photos/{id}` | Descargar/subir fotografía |
+| GET/POST | `/api/boats` | Consultar/gestionar barcos |
+| GET/POST | `/api/categories` | Consultar/gestionar categorías |
+| GET/POST | `/api/users` | Consultar/gestionar usuarios |
+| GET | `/api/audit` | Consultar auditoría (admin/inspector) |
 
-**Autenticación**: por token (`Authorization: Bearer <token>`), no por
-cookie de sesión — un móvil no gestiona bien cookies. Los tokens se
-guardan (hasheados, igual que las contraseñas) en la tabla `api_tokens`,
-uno por dispositivo, para poder revocar el acceso de un móvil concreto sin
-afectar a los demás.
+### Versionado
 
-**Permisos**: la API reutiliza exactamente las mismas funciones de
-permisos que la web (`parts_can_view`, `parts_can_edit_all`,
-`parts_can_create`, `parts_can_manage_photo`, `parts_visible_boat_id` en
-`parts_util.php`). Un jefe de máquinas o mecánico solo ve/edita las
-piezas de su propio barco también desde el móvil; admin/inspector ven los
-6 barcos. La auditoría (`audit_log`) registra igual las acciones hechas
-desde la API que desde la web.
+El servidor mantiene tres versiones independientes:
 
-**Sincronización**: `parts` ya traía su propio campo `updated_at` (con
-precisión de milisegundos, usado también para detectar ediciones
-simultáneas). Para que `boats` y `categories` pudieran participar en la
-misma sincronización por fecha, se les añadieron las columnas
-`updated_at` y `deleted_at` (borrado lógico, no físico — así el móvil se
-entera de qué se borró). Estas columnas y la tabla `api_tokens` están
-integradas en `db_init_schema()`/`db_migrate()` (`src/db.php`): se crean
-solas tanto en una instalación nueva como al actualizar una existente, no
-requieren ningún paso manual.
+- **APP_VERSION 1.4.3:** versión del servidor.
+- **API_VERSION 1.4.3:** contrato que debe soportar el cliente.
+- **SCHEMA_VERSION 3:** versión del esquema SQLite.
 
-**Actualización parcial de cantidad en `/api/parts/push`**: además del
-`update` completo, la API acepta un cambio de cantidad con solo
-`action`, `id`, `base_updated_at` y `quantity`. En este caso el servidor
-modifica exclusivamente `quantity` y `updated_at`, conservando nombre,
-referencia, categoría, ubicación y notas. Esta modalidad permite que los
-botones `+`/`−` de la app Android y el rol `mechanic` trabajen de forma
-directa y segura sin tener que reenviar todos los campos de la pieza. El
-control de permisos y la detección de conflictos mediante `base_updated_at`
-se mantienen exactamente igual.
+La aplicación Android candidata actual utiliza **APP_VERSION 0.1.2** y **API_VERSION 1.4.3**. La versión Android no forma parte del versionado del servidor.
 
+### Sincronización
 
-**Por qué HTTP y no HTTPS**: el hosting actual (AwardSpace, plan
-gratuito) no ofrece SSL. Se decidió asumir el riesgo conscientemente: el
-uso principal previsto es desde la red de a bordo de los barcos, un
-entorno de bajo riesgo de interceptación. Si en el futuro se cambia de
-hosting o se añade HTTPS (p. ej. con Cloudflare por delante), no hace
-falta cambiar nada del código — `bootstrap.php` ya detecta HTTPS
-automáticamente (incluida la cabecera `X-Forwarded-Proto` que usa
-Cloudflare).
+- Primera carga: `GET /api/sync`.
+- Siguientes cargas: `GET /api/sync?since=<último server_time>`.
+- El servidor captura el cursor antes de leer los datos.
+- Las piezas eliminadas se conservan como tombstones.
+- Las altas offline utilizan `local_id` para evitar duplicados.
+- `POST /api/parts/push` admite updates completos y updates parciales de cantidad.
+- Las fotos se sincronizan separadamente mediante `/api/photos/{id}`.
+
+**Importante:** los permisos se aplican siempre en el servidor. La interfaz Android puede ocultar acciones no permitidas, pero no sustituye la autorización backend.
+
+Para modificar la API en el futuro, actualizar primero `api_contract_android.md` y evaluar si el cambio requiere incrementar `API_VERSION`.
 
 ## Estructura de carpetas
 
