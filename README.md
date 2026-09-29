@@ -314,3 +314,8 @@ Menú *Backups → Restaurar* (solo Administrador). El proceso:
 ## Licencia y créditos
 
 Aplicación desarrollada como proyecto interno para gestión de repuestos de barcos. Dependencia externa: [PhpSpreadsheet](https://phpspreadsheet.readthedocs.io/) (MIT).
+
+
+## Despliegue automático
+
+Para la instalación actual en hosting compartido se dispone de un método de despliegue mediante deploy.php y despliegue.zip. Las instrucciones completas están en README_DEPLOY.md. El instalador descomprime el paquete en un directorio temporal, protege la carpeta data/ y, únicamente si el despliegue termina correctamente, elimina automáticamente deploy.php y despliegue.zip.
