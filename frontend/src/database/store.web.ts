@@ -2,7 +2,66 @@
 // util. Mirrors store.ts semantics with in-memory arrays serialized to JSON.
 // Native uses store.ts (real SQLite).
 
-import { storage } from "@/src/utils/storage";
+// Browser persistence: IndexedDB is the durable local database for the PWA.
+// The LocalStore contract remains unchanged so repositories/sync code are shared
+// with native SQLite. Values are stored by logical key inside one IDB object store.
+const DB_NAME = "shipinventory-web";
+const DB_VERSION = 1;
+const STORE_NAME = "kv";
+
+interface KvRecord { key: string; value: unknown; }
+
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+function openDb(): Promise<IDBDatabase> {
+  if (dbPromise) return dbPromise;
+  dbPromise = new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB no está disponible en este navegador."));
+      return;
+    }
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "key" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("No se pudo abrir IndexedDB."));
+  });
+  return dbPromise;
+}
+
+async function idbGet<T>(key: string): Promise<T | undefined> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const request = tx.objectStore(STORE_NAME).get(key);
+    request.onsuccess = () => resolve((request.result as KvRecord | undefined)?.value as T | undefined);
+    request.onerror = () => reject(request.error ?? new Error("No se pudo leer IndexedDB."));
+  });
+}
+
+async function idbSet(key: string, value: unknown): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).put({ key, value });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("No se pudo escribir IndexedDB."));
+    tx.onabort = () => reject(tx.error ?? new Error("Escritura de IndexedDB abortada."));
+  });
+}
+
+async function idbRemove(key: string): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("No se pudo eliminar de IndexedDB."));
+    tx.onabort = () => reject(tx.error ?? new Error("Eliminación de IndexedDB abortada."));
+  });
+}
 import {
   Boat,
   Category,
@@ -31,16 +90,11 @@ const K = {
 };
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
-  const raw = await storage.getItem(key, "");
-  if (!raw) return fallback;
-  try {
-    return JSON.parse(raw as string) as T;
-  } catch {
-    return fallback;
-  }
+  const value = await idbGet<T>(key);
+  return value === undefined ? fallback : value;
 }
 async function writeJson(key: string, value: unknown): Promise<void> {
-  await storage.setItem(key, JSON.stringify(value));
+  await idbSet(key, value);
 }
 const nowIso = () => new Date().toISOString();
 
@@ -79,15 +133,15 @@ class WebStore implements LocalStore {
     return readJson<SessionRow | null>(K.session, null);
   }
   async clearSession(): Promise<void> {
-    await storage.removeItem(K.session);
+    await idbRemove(K.session);
   }
   async clearUserData(): Promise<void> {
-    await storage.removeItem(K.parts);
-    await storage.removeItem(K.queue);
-    await storage.removeItem(K.photos);
-    await storage.removeItem(K.users);
-    await storage.removeItem(K.boats);
-    await storage.removeItem(K.categories);
+    await idbRemove(K.parts);
+    await idbRemove(K.queue);
+    await idbRemove(K.photos);
+    await idbRemove(K.users);
+    await idbRemove(K.boats);
+    await idbRemove(K.categories);
   }
   async setLastSyncAt(serverTime: string): Promise<void> {
     const s = await this.getSession();
