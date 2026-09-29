@@ -15,8 +15,15 @@ if (str_starts_with($path, '/api/')) {
         require __DIR__ . '/src/actions/api_photos.php';
         return;
     }
+    if (preg_match('#^/api/backups/[^/]+/download$#', $path)) {
+        require __DIR__ . '/src/actions/api_backups.php';
+        return;
+    }
 
     switch ($path) {
+        case '/api/handshake':
+            if ($method === 'GET') { require __DIR__ . '/src/actions/api_handshake.php'; return; }
+            break;
         case '/api/login':
             if ($method === 'POST') { require __DIR__ . '/src/actions/api_login.php'; return; }
             break;
@@ -28,6 +35,34 @@ if (str_starts_with($path, '/api/')) {
             break;
         case '/api/parts/push':
             if ($method === 'POST') { require __DIR__ . '/src/actions/api_parts_push.php'; return; }
+            break;
+        case '/api/boats':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_boats.php'; return; }
+            break;
+        case '/api/categories':
+        if ($method === 'GET' || $method === 'POST') {
+            require __DIR__ . '/src/actions/api_categories.php';
+            return;
+        }
+        break;
+
+    case '/api/users':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_users.php'; return; }
+            break;
+        case '/api/audit':
+            if ($method === 'GET') { require __DIR__ . '/src/actions/api_audit.php'; return; }
+            break;
+        case '/api/settings':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_settings.php'; return; }
+            break;
+        case '/api/status':
+            if ($method === 'GET') { require __DIR__ . '/src/actions/api_status.php'; return; }
+            break;
+        case '/api/backups':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_backups.php'; return; }
+            break;
+        case '/api/backups/restore-upload':
+            if ($method === 'POST') { require __DIR__ . '/src/actions/api_backups.php'; return; }
             break;
     }
     http_response_code(404);

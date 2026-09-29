@@ -34,7 +34,7 @@ if ($path === '/parts' && $method === 'GET') {
         $boat_id = $forcedBoat > 0 ? $forcedBoat : -1; // -1 = no ver nada
     }
 
-    $where = []; $args = [];
+    $where = ['p.deleted_at IS NULL']; $args = [];
     if ($boat_id === -1) {
         $where[] = '0=1';
     } elseif ($boat_id !== null) {
@@ -185,7 +185,9 @@ if (preg_match('#^/parts/(\d+)(?:/(edit|delete|quantity|photo|photo/delete))?$#'
         csrf_check();
         if (!parts_can_delete($actor, $p)) { http_response_code(403); echo 'No autorizado'; return; }
         photo_delete($id);
-        db()->prepare('DELETE FROM parts WHERE id=:id')->execute([':id'=>$id]);
+        $now = _now();
+        db()->prepare('UPDATE parts SET photo_path=NULL, deleted_at=:t, updated_at=:t WHERE id=:id')
+            ->execute([':t'=>$now, ':id'=>$id]);
         audit_log('part.delete','part',$id,(int)$p['boat_id'],['name'=>$p['name'],'reference'=>$p['reference']]);
         $_SESSION['flash_success'] = 'Repuesto eliminado.';
         redirect('/parts');
