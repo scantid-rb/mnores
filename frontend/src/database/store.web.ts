@@ -504,6 +504,8 @@ class WebStore implements LocalStore {
     if (idx < 0) throw new Error("Pieza no encontrada");
     parts[idx] = { ...parts[idx], local_photo_path: localPath };
     const q = await readJson<PendingPhoto[]>(K.photos, []);
+    const previous = q.filter((p) => p.row_uid === rowUid);
+    for (const p of previous) if (p.local_path !== localPath) await deleteWebPhotoBlob(p.local_path);
     const filtered = q.filter((p) => p.row_uid !== rowUid);
     filtered.push({ queue_id: newQueueId(), row_uid: rowUid, server_id: parts[idx].server_id, local_path: localPath, retry_count: 0, last_error: null, status: "pending", created_at: nowIso() });
     await writeJson(K.parts, parts);
@@ -520,9 +522,12 @@ class WebStore implements LocalStore {
   async applyPhotoOk(rowUid: string, serverUpdatedAt: string): Promise<void> {
     const parts = await this.parts();
     const idx = parts.findIndex((p) => p.row_uid === rowUid);
-    if (idx >= 0) parts[idx] = { ...parts[idx], photo_path: "remote", updated_at: serverUpdatedAt };
+    const q = await readJson<PendingPhoto[]>(K.photos, []);
+    const photo = q.find((p) => p.row_uid === rowUid);
+    if (idx >= 0) parts[idx] = { ...parts[idx], photo_path: "remote", local_photo_path: null, updated_at: serverUpdatedAt };
+    if (photo) await deleteWebPhotoBlob(photo.local_path);
     await writeJson(K.parts, parts);
-    await writeJson(K.photos, (await readJson<PendingPhoto[]>(K.photos, [])).filter((p) => p.row_uid !== rowUid));
+    await writeJson(K.photos, q.filter((p) => p.row_uid !== rowUid));
   }
   async markPhotoRetry(queueId: string, lastError: string): Promise<void> {
     const q = await readJson<PendingPhoto[]>(K.photos, []);
