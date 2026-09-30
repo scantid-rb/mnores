@@ -124,6 +124,15 @@ export async function removeLocalPhoto(localPath: string | null | undefined): Pr
   if (localPath) await removeFile(localPath);
 }
 
+export async function photoExists(localPath: string): Promise<boolean> {
+  try {
+    const info = await FileSystem.getInfoAsync(localPath);
+    return info.exists;
+  } catch {
+    return false;
+  }
+}
+
 export async function uploadPartPhoto(token: string, partId: number, localPath: string): Promise<{ updated_at: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
