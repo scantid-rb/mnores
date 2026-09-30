@@ -3,7 +3,8 @@
 // (chief_engineer). Delete uses an inline two-step confirm (no Alert).
 
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Platform } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { Modal, Pressable, ScrollView, Text, View } from "react-native";
