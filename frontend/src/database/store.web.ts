@@ -50,9 +50,12 @@ function openDb(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-// Every public operation reads and commits its complete snapshot in one IDB
-// transaction. The transaction lock also serializes other browser tabs. Inside
-// the callback we only await in-memory operations, never timers or network I/O.
+// Every public operation works against an in-memory snapshot and commits the
+// resulting dirty keys in a FRESH IndexedDB transaction. Do not keep an IDB
+// transaction open while awaiting arbitrary Promise continuations: real
+// browsers may auto-commit/mark it inactive even though fake-indexeddb does not.
+// A Web Lock serializes operations across tabs when the browser supports it;
+// operationTail provides the same guarantee inside this JS context.
 interface Snapshot {
   kv: Map<string, unknown>;
   photos: Map<string, Blob>;
@@ -68,48 +71,90 @@ function requestValue<T>(request: IDBRequest<T>): Promise<T> {
     request.onerror = () => reject(request.error);
   });
 }
-function atomic<T>(operation: () => Promise<T>): Promise<T> {
-  const run = operationTail.then(async () => {
-    const db = await openDb();
-    const tx = db.transaction([STORE_NAME, PHOTO_STORE_NAME], "readwrite");
-    const done = new Promise<void>((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onabort = tx.onerror = () => reject(tx.error ?? new Error("Transacción de IndexedDB abortada."));
-    });
-    // Attach immediately: a read/put may abort before the callback reaches done.
-    void done.catch(() => undefined);
-    try {
-      const [values, photos] = await Promise.all([
-        requestValue(tx.objectStore(STORE_NAME).getAll()),
-        requestValue(tx.objectStore(PHOTO_STORE_NAME).getAll()),
-      ]);
-      const current: Snapshot = {
-        kv: new Map(values.map((row: KvRecord) => [row.key, row.value])),
-        photos: new Map(photos.map((row: { key: string; blob: Blob }) => [row.key, row.blob])),
-        dirtyKv: new Set(), dirtyPhotos: new Set(),
-      };
-      snapshot = current;
-      const value = await operation();
-      for (const key of current.dirtyKv) {
-        const store = tx.objectStore(STORE_NAME);
-        if (current.kv.has(key)) store.put({ key, value: current.kv.get(key) });
-        else store.delete(key);
-      }
-      for (const key of current.dirtyPhotos) {
-        const store = tx.objectStore(PHOTO_STORE_NAME);
-        if (current.photos.has(key)) store.put({ key, blob: current.photos.get(key) });
-        else store.delete(key);
-      }
-      snapshot = null;
-      await done;
-      return value;
-    } catch (error) {
-      snapshot = null;
-      try { tx.abort(); } catch { /* Already aborted/completed. */ }
-      await done.catch(() => undefined);
-      throw error;
-    }
+
+function transactionDone(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(tx.error ?? new Error("Transacción de IndexedDB abortada."));
+    tx.onerror = () => reject(tx.error ?? new Error("Error en la transacción de IndexedDB."));
   });
+}
+
+async function loadSnapshot(): Promise<Snapshot> {
+  const db = await openDb();
+  const tx = db.transaction([STORE_NAME, PHOTO_STORE_NAME], "readonly");
+  const done = transactionDone(tx);
+  void done.catch(() => undefined);
+
+  const [values, photos] = await Promise.all([
+    requestValue(tx.objectStore(STORE_NAME).getAll()),
+    requestValue(tx.objectStore(PHOTO_STORE_NAME).getAll()),
+  ]);
+  await done;
+
+  return {
+    kv: new Map(values.map((row: KvRecord) => [row.key, row.value])),
+    photos: new Map(photos.map((row: { key: string; blob: Blob }) => [row.key, row.blob])),
+    dirtyKv: new Set(),
+    dirtyPhotos: new Set(),
+  };
+}
+
+async function commitSnapshot(current: Snapshot): Promise<void> {
+  if (current.dirtyKv.size === 0 && current.dirtyPhotos.size === 0) return;
+
+  const db = await openDb();
+  const tx = db.transaction([STORE_NAME, PHOTO_STORE_NAME], "readwrite");
+  const done = transactionDone(tx);
+  void done.catch(() => undefined);
+
+  const kvStore = tx.objectStore(STORE_NAME);
+  for (const key of current.dirtyKv) {
+    if (current.kv.has(key)) kvStore.put({ key, value: current.kv.get(key) });
+    else kvStore.delete(key);
+  }
+
+  const photoStore = tx.objectStore(PHOTO_STORE_NAME);
+  for (const key of current.dirtyPhotos) {
+    if (current.photos.has(key)) photoStore.put({ key, blob: current.photos.get(key) });
+    else photoStore.delete(key);
+  }
+
+  await done;
+}
+
+async function withCrossTabLock<T>(operation: () => Promise<T>): Promise<T> {
+  const nav =
+    typeof navigator !== "undefined"
+      ? (navigator as Navigator & {
+          locks?: { request<R>(name: string, callback: () => Promise<R>): Promise<R> };
+        })
+      : null;
+
+  if (nav?.locks?.request) {
+    return nav.locks.request(`${DB_NAME}:atomic`, operation);
+  }
+  return operation();
+}
+
+function atomic<T>(operation: () => Promise<T>): Promise<T> {
+  const run = operationTail.then(() =>
+    withCrossTabLock(async () => {
+      const current = await loadSnapshot();
+      snapshot = current;
+      try {
+        const value = await operation();
+        snapshot = null;
+        await commitSnapshot(current);
+        return value;
+      } catch (error) {
+        snapshot = null;
+        console.error("[PWA-IDB] atomic operation failed", error);
+        throw error;
+      }
+    }),
+  );
+
   operationTail = run.catch(() => undefined);
   return run;
 }
