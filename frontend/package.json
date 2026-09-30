@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "build:pwa": "node scripts/build-pwa.cjs",
-    "test": "node tests/offline.cjs && node tests/sw.cjs && node tests/web.cjs && node tests/query-offline.cjs",
+    "test": "node tests/connectivity.cjs && node tests/offline.cjs && node tests/sw.cjs && node tests/web.cjs && node tests/query-offline.cjs",
     "test:api": "python3 tests/api.py"
   },
   "dependencies": {
