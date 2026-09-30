@@ -110,6 +110,14 @@ function unknownDiag(e: unknown, path = "/api/parts/push", method = "POST"): Syn
 }
 
 async function applyOk(entry: PendingChange, res: PushResult): Promise<void> {
+  console.info("[PWA-SYNC] applyOk", {
+    queue_id: entry.queue_id,
+    action: entry.action,
+    row_uid: entry.row_uid,
+    client_local_id: entry.client_local_id,
+    server_id: res.id ?? null,
+    status: res.status,
+  });
   const updatedAt = res.updated_at ?? new Date().toISOString();
   if (entry.action === "create" && res.id != null) {
     await localStore.applyCreateOk(entry.queue_id, entry.row_uid, res.id, updatedAt);
@@ -129,17 +137,41 @@ async function processQueue(token: string): Promise<SyncSummary> {
   };
 
   const pending = await localStore.getPendingChanges();
+  console.info("[PWA-SYNC] queue before", {
+    count: pending.length,
+    entries: pending.map((e) => ({
+      queue_id: e.queue_id,
+      action: e.action,
+      row_uid: e.row_uid,
+      client_local_id: e.client_local_id,
+      entity_id: e.entity_id,
+      status: e.status,
+    })),
+  });
   if (pending.length === 0) return summary;
 
   let errDiag: SyncDiagnostics | null = null;
 
   for (const entry of pending) {
     summary.pushed++;
+    console.info("[PWA-SYNC] sending", {
+      queue_id: entry.queue_id,
+      action: entry.action,
+      row_uid: entry.row_uid,
+      client_local_id: entry.client_local_id,
+    });
     await localStore.markSyncing([entry.queue_id]);
 
     let response;
     try {
       response = await apiPush(token, [buildChange(entry)]);
+      console.info("[PWA-SYNC] server response", {
+        queue_id: entry.queue_id,
+        action: entry.action,
+        client_local_id: entry.client_local_id,
+        ok: response?.ok ?? null,
+        results: response?.results ?? [],
+      });
     } catch (e) {
       if (e instanceof ApiError) {
         const d = errorDiag(e);
@@ -167,6 +199,13 @@ async function processQueue(token: string): Promise<SyncSummary> {
 
     const results = response?.results ?? [];
     const res = matchResult(entry, results);
+    console.info("[PWA-SYNC] match", {
+      queue_id: entry.queue_id,
+      action: entry.action,
+      client_local_id: entry.client_local_id,
+      matched: !!res,
+      result: res ?? null,
+    });
 
     if (!res) {
       await localStore.markRetry(entry.queue_id, "sin resultado del servidor");
@@ -177,6 +216,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
       case "ok":
         summary.ok++;
         await applyOk(entry, res);
+        console.info("[PWA-SYNC] applyOk completed", { queue_id: entry.queue_id });
         break;
       case "conflict_overwritten":
         summary.conflicts++;
@@ -214,6 +254,18 @@ async function processQueue(token: string): Promise<SyncSummary> {
   }
 
   // Preserve a logical API rejection diagnostic; a later HTTP-200 success must not overwrite it.\n  summary.diagnostics = errDiag ?? summary.diagnostics;
+  const pendingAfter = await localStore.getPendingChanges();
+  console.info("[PWA-SYNC] queue after", {
+    count: pendingAfter.length,
+    entries: pendingAfter.map((e) => ({
+      queue_id: e.queue_id,
+      action: e.action,
+      row_uid: e.row_uid,
+      client_local_id: e.client_local_id,
+      entity_id: e.entity_id,
+      status: e.status,
+    })),
+  });
   return summary;
 }
 
