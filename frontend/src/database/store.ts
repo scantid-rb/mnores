@@ -461,13 +461,17 @@ class SqliteStore implements LocalStore {
       await db.runAsync(`UPDATE parts SET ${sets.join(", ")} WHERE row_uid = ?;`, [...vals, rowUid]);
 
       if (part.server_id == null) {
-        // Local create not yet synced: merge into the existing create payload,
-        // do NOT create a separate update op (still one create with local_id).
-        const createEntry = await db.getFirstAsync<{ queue_id: string; payload: string }>(
-          "SELECT queue_id, payload FROM pending_changes WHERE row_uid = ? AND action = 'create' LIMIT 1;",
+        const createEntry = await db.getFirstAsync<{ queue_id: string; payload: string; status: string }>(
+          "SELECT queue_id, payload, status FROM pending_changes WHERE row_uid = ? AND action = 'create' LIMIT 1;",
           [rowUid],
         );
-        if (createEntry) {
+        if (createEntry?.status === 'syncing') {
+          await db.runAsync(
+            `INSERT INTO pending_changes (queue_id, action, entity, entity_id, row_uid, client_local_id, payload, base_updated_at, created_at, retry_count, last_error, status)
+             VALUES (?, 'update', 'part', NULL, ?, NULL, ?, NULL, ?, 0, NULL, 'pending');`,
+            [newQueueId(), rowUid, JSON.stringify(stripUndefined(fields)), nowIso()],
+          );
+        } else if (createEntry) {
           const merged = { ...JSON.parse(createEntry.payload || "{}"), ...stripUndefined(fields) };
           await db.runAsync(
             "UPDATE pending_changes SET payload = ?, status = 'pending' WHERE queue_id = ?;",
@@ -475,9 +479,8 @@ class SqliteStore implements LocalStore {
           );
         }
       } else {
-        // Consolidate: reuse an existing pending update op for this row.
         const upd = await db.getFirstAsync<{ queue_id: string; payload: string }>(
-          "SELECT queue_id, payload FROM pending_changes WHERE row_uid = ? AND action = 'update' AND status IN ('pending','syncing') LIMIT 1;",
+          "SELECT queue_id, payload FROM pending_changes WHERE row_uid = ? AND action = 'update' AND status = 'pending' LIMIT 1;",
           [rowUid],
         );
         if (upd) {
