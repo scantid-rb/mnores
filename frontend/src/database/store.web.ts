@@ -445,6 +445,8 @@ class WebStore implements LocalStore {
     const part = parts.find((p) => p.row_uid === rowUid);
     if (!part) return;
     let q = await this.queue();
+    const photoQueue = await readJson<PendingPhoto[]>(K.photos, []);
+    const photosForPart = photoQueue.filter((p) => p.row_uid === rowUid);
 
     if (part.server_id == null) {
       const createEntry = q.find((e) => e.row_uid === rowUid && e.action === "create");
@@ -457,9 +459,13 @@ class WebStore implements LocalStore {
           base_updated_at: null, created_at: nowIso(), retry_count: 0,
           last_error: null, status: "pending",
         });
+        for (const photo of photosForPart) await deleteWebPhotoBlob(photo.local_path);
+        await writeJson(K.photos, photoQueue.filter((p) => p.row_uid !== rowUid));
         await writeJson(K.parts, parts);
       } else {
         q = q.filter((e) => !(e.row_uid === rowUid && e.action === "create"));
+        for (const photo of photosForPart) await deleteWebPhotoBlob(photo.local_path);
+        await writeJson(K.photos, photoQueue.filter((p) => p.row_uid !== rowUid));
         await writeJson(K.parts, parts.filter((p) => p.row_uid !== rowUid));
       }
     } else {
