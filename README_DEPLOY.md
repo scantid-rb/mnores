@@ -127,8 +127,8 @@ No dejar deploy.php en el servidor de forma permanente.
 ## 11. Cliente PWA en la rama pwa
 
 Compilar `frontend/` con `PWA_BASE_PATH=/pwa yarn build:pwa` siguiendo
-[frontend/README_PWA.md](frontend/README_PWA.md). Copiar `frontend/dist/` a una
-carpeta `pwa/` de preparación e incluir esa carpeta y el `.htaccess` actualizado
+[frontend/README_PWA.md](frontend/README_PWA.md). El build se genera directamente en
+`pwa/` en la raíz del repositorio. Incluir esa carpeta y el `.htaccess` actualizado
 en el ZIP si se quiere publicar el cliente junto al backend. No incluir
 `frontend/node_modules/`, fuentes de desarrollo ni `data/`. Publicar primero
 los recursos y después HTML/SW; conservar los recursos anteriores durante

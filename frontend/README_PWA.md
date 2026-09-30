@@ -26,7 +26,10 @@ colas, reconciliación, fotos y el ciclo de actualización del service worker.
 Los tests usan IndexedDB en memoria y dobles de la Cache API; no sustituyen
 la comprobación de instalación en dispositivos reales.
 
-La salida compilada está en `frontend/dist/`. `PWA_BASE_PATH` debe coincidir con
+La salida compilada está directamente en `pwa/`, en la raíz del repositorio,
+sin carpetas intermedias. Incluye App 0.1.1 y API 1.4.5; las imágenes y fuentes
+de dependencias se publican como `assets/dependencies/`, sin carpetas `node_modules`.
+`PWA_BASE_PATH` debe coincidir con
 la ruta pública de despliegue; usar cadena vacía si la PWA ocupa la raíz de un
 servidor estático. El servidor PHP de este repositorio ocupa la raíz, por lo que
 la ruta recomendada es `/pwa/`. El directorio `public/` de Expo es una plantilla;
@@ -38,8 +41,6 @@ identificador de caché calculado a partir del contenido exportado.
 Desde la raíz del repositorio, después de compilar con `/pwa`:
 
 ```bash
-mkdir -p pwa
-cp -R frontend/dist/. pwa/
 php -S 127.0.0.1:8080 router.php
 ```
 
@@ -55,7 +56,7 @@ para habilitar el service worker. Publicar la PWA HTTPS con una API HTTP provoca
 bloqueo por contenido mixto. El plan HTTP del hosting descrito en el README no
 permite verificar la PWA offline en producción sin añadir HTTPS.
 
-Copiar el contenido completo de `dist/` a `/pwa/` junto al backend. Mantener las
+Copiar el contenido completo de `pwa/` al directorio público `/pwa/` junto al backend. Mantener las
 reglas `.htaccess` del repositorio: las rutas `/pwa/part/123` y `/pwa/inventory`
 deben devolver `pwa/index.html`, mientras `/api/...` sigue entrando en PHP.
 En Nginx añadir `location /pwa/ { try_files $uri $uri/ /pwa/index.html; }`.
