@@ -14,11 +14,11 @@ import { newLocalId } from "@/src/utils/id";
 function useAfterMutation() {
   const qc = useQueryClient();
   const { syncNow, refreshPending } = useSync();
-  return async (rowUid?: string) => {
+  return (rowUid?: string) => {
     qc.invalidateQueries({ queryKey: ["parts"] });
     qc.invalidateQueries({ queryKey: ["counts"] });
     if (rowUid) qc.invalidateQueries({ queryKey: ["part", rowUid] });
-    await refreshPending();
+    void refreshPending();
     void syncNow(); // fire-and-forget; guarded + offline-safe
   };
 }
