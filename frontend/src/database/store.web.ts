@@ -1,6 +1,20 @@
-// Web fallback for the local store (preview rendering). Backed by the storage
-// util. Mirrors store.ts semantics with in-memory arrays serialized to JSON.
-// Native uses store.ts (real SQLite).
+import {
+  Boat,
+  Category,
+  CreatePartInput,
+  EditablePartFields,
+  LocalPart,
+  Part,
+  PendingChange,
+  PendingPhoto,
+  SessionRow,
+  SessionUser,
+  User,
+} from "@/src/types";
+import { LocalStore } from "@/src/database/store.types";
+import { newQueueId } from "@/src/utils/id";
+
+// Durable transactional IndexedDB store for the PWA. Native uses SQLite.
 
 // Browser persistence: IndexedDB is the durable local database for the PWA.
 // The LocalStore contract remains unchanged so repositories/sync code are shared
@@ -27,98 +41,105 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "key" });
       if (!db.objectStoreNames.contains(PHOTO_STORE_NAME)) db.createObjectStore(PHOTO_STORE_NAME, { keyPath: "key" });
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      request.result.onversionchange = () => { request.result.close(); dbPromise = null; };
+      resolve(request.result);
+    };
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir IndexedDB."));
   });
   return dbPromise;
 }
 
+// Every public operation reads and commits its complete snapshot in one IDB
+// transaction. The transaction lock also serializes other browser tabs. Inside
+// the callback we only await in-memory operations, never timers or network I/O.
+interface Snapshot {
+  kv: Map<string, unknown>;
+  photos: Map<string, Blob>;
+  dirtyKv: Set<string>;
+  dirtyPhotos: Set<string>;
+}
+let snapshot: Snapshot | null = null;
+let operationTail: Promise<unknown> = Promise.resolve();
+
+function requestValue<T>(request: IDBRequest<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+function atomic<T>(operation: () => Promise<T>): Promise<T> {
+  const run = operationTail.then(async () => {
+    const db = await openDb();
+    const tx = db.transaction([STORE_NAME, PHOTO_STORE_NAME], "readwrite");
+    const done = new Promise<void>((resolve, reject) => {
+      tx.oncomplete = () => resolve();
+      tx.onabort = tx.onerror = () => reject(tx.error ?? new Error("Transacción de IndexedDB abortada."));
+    });
+    // Attach immediately: a read/put may abort before the callback reaches done.
+    void done.catch(() => undefined);
+    try {
+      const [values, photos] = await Promise.all([
+        requestValue(tx.objectStore(STORE_NAME).getAll()),
+        requestValue(tx.objectStore(PHOTO_STORE_NAME).getAll()),
+      ]);
+      const current: Snapshot = {
+        kv: new Map(values.map((row: KvRecord) => [row.key, row.value])),
+        photos: new Map(photos.map((row: { key: string; blob: Blob }) => [row.key, row.blob])),
+        dirtyKv: new Set(), dirtyPhotos: new Set(),
+      };
+      snapshot = current;
+      const value = await operation();
+      for (const key of current.dirtyKv) {
+        const store = tx.objectStore(STORE_NAME);
+        if (current.kv.has(key)) store.put({ key, value: current.kv.get(key) });
+        else store.delete(key);
+      }
+      for (const key of current.dirtyPhotos) {
+        const store = tx.objectStore(PHOTO_STORE_NAME);
+        if (current.photos.has(key)) store.put({ key, blob: current.photos.get(key) });
+        else store.delete(key);
+      }
+      snapshot = null;
+      await done;
+      return value;
+    } catch (error) {
+      snapshot = null;
+      try { tx.abort(); } catch { /* Already aborted/completed. */ }
+      await done.catch(() => undefined);
+      throw error;
+    }
+  });
+  operationTail = run.catch(() => undefined);
+  return run;
+}
+function currentSnapshot(): Snapshot {
+  if (!snapshot) throw new Error("Operación fuera de una transacción de IndexedDB.");
+  return snapshot;
+}
 async function idbGet<T>(key: string): Promise<T | undefined> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const request = tx.objectStore(STORE_NAME).get(key);
-    request.onsuccess = () => resolve((request.result as KvRecord | undefined)?.value as T | undefined);
-    request.onerror = () => reject(request.error ?? new Error("No se pudo leer IndexedDB."));
-  });
+  return structuredClone(currentSnapshot().kv.get(key)) as T | undefined;
 }
-
 async function idbSet(key: string, value: unknown): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).put({ key, value });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("No se pudo escribir IndexedDB."));
-    tx.onabort = () => reject(tx.error ?? new Error("Escritura de IndexedDB abortada."));
-  });
+  const state = currentSnapshot();
+  state.kv.set(key, structuredClone(value)); state.dirtyKv.add(key);
 }
-
-async function idbPhotoSet(key: string, blob: Blob): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PHOTO_STORE_NAME, "readwrite");
-    tx.objectStore(PHOTO_STORE_NAME).put({ key, blob });
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("No se pudo guardar la foto en IndexedDB."));
-    tx.onabort = () => reject(tx.error ?? new Error("Guardado de foto en IndexedDB abortado."));
-  });
-}
-
-async function idbPhotoGet(key: string): Promise<Blob | null> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PHOTO_STORE_NAME, "readonly");
-    const request = tx.objectStore(PHOTO_STORE_NAME).get(key);
-    request.onsuccess = () => resolve((request.result as { key: string; blob: Blob } | undefined)?.blob ?? null);
-    request.onerror = () => reject(request.error ?? new Error("No se pudo leer la foto de IndexedDB."));
-  });
-}
-
-async function idbPhotoRemove(key: string): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(PHOTO_STORE_NAME, "readwrite");
-    tx.objectStore(PHOTO_STORE_NAME).delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("No se pudo eliminar la foto de IndexedDB."));
-    tx.onabort = () => reject(tx.error ?? new Error("Eliminación de foto de IndexedDB abortada."));
-  });
-}
-
-export const saveWebPhotoBlob = idbPhotoSet;
-export const getWebPhotoBlob = idbPhotoGet;
-export const deleteWebPhotoBlob = idbPhotoRemove;
-
-export async function hasWebPhotoBlob(key: string): Promise<boolean> {
-  return (await idbPhotoGet(key)) !== null;
-}
-
 async function idbRemove(key: string): Promise<void> {
-  const db = await openDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    tx.objectStore(STORE_NAME).delete(key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error ?? new Error("No se pudo eliminar de IndexedDB."));
-    tx.onabort = () => reject(tx.error ?? new Error("Eliminación de IndexedDB abortada."));
-  });
+  const state = currentSnapshot(); state.kv.delete(key); state.dirtyKv.add(key);
 }
-import {
-  Boat,
-  Category,
-  CreatePartInput,
-  EditablePartFields,
-  LocalPart,
-  Part,
-  PendingChange,
-  PendingPhoto,
-  SessionRow,
-  SessionUser,
-  User,
-} from "@/src/types";
-import { LocalStore } from "@/src/database/store.types";
-import { newQueueId } from "@/src/utils/id";
+async function idbPhotoSet(key: string, blob: Blob): Promise<void> {
+  const state = currentSnapshot(); state.photos.set(key, blob); state.dirtyPhotos.add(key);
+}
+async function idbPhotoGet(key: string): Promise<Blob | null> {
+  return currentSnapshot().photos.get(key) ?? null;
+}
+async function idbPhotoRemove(key: string): Promise<void> {
+  const state = currentSnapshot(); state.photos.delete(key); state.dirtyPhotos.add(key);
+}
+export const saveWebPhotoBlob = (key: string, blob: Blob) => atomic(() => idbPhotoSet(key, blob));
+export const getWebPhotoBlob = (key: string) => atomic(() => idbPhotoGet(key));
+export const deleteWebPhotoBlob = (key: string) => atomic(() => idbPhotoRemove(key));
+export const hasWebPhotoBlob = (key: string) => atomic(async () => (await idbPhotoGet(key)) !== null);
 
 const MAX_RETRIES = 5;
 const K = {
@@ -166,6 +187,9 @@ class WebStore implements LocalStore {
       }
     }
     if (changed) await writeJson(K.queue, q);
+    const photos = await readJson<PendingPhoto[]>(K.photos, []);
+    for (const photo of photos) if (photo.status === "uploading") photo.status = "pending";
+    await writeJson(K.photos, photos);
   }
 
   async saveSession(user: SessionUser): Promise<void> {
@@ -184,6 +208,8 @@ class WebStore implements LocalStore {
     await idbRemove(K.users);
     await idbRemove(K.boats);
     await idbRemove(K.categories);
+    const state = currentSnapshot();
+    for (const key of state.photos.keys()) await idbPhotoRemove(key);
   }
   async setLastSyncAt(serverTime: string): Promise<void> {
     const s = await this.getSession();
@@ -223,14 +249,14 @@ class WebStore implements LocalStore {
       }
 
       // Repair any duplicate local rows for the same canonical server id.
-      const matches = kept.filter((row) => row.server_id === p.id);
+      const matches = local.filter((row) => row.server_id === p.id);
       if (matches.length > 0) {
         const canonical =
           matches.find((row) => row.row_uid === `srv-${p.id}`) ??
           matches.find((row) => row.sync_state === "synced") ??
           matches[0];
         const canonicalIndex = kept.findIndex((row) => row.row_uid === canonical.row_uid);
-        kept[canonicalIndex] = {
+        const reconciled: LocalPart = {
           ...canonical,
           server_id: p.id,
           local_id: null,
@@ -248,6 +274,8 @@ class WebStore implements LocalStore {
           pending_delete: 0,
           sync_state: "synced",
         };
+        if (canonicalIndex >= 0) kept[canonicalIndex] = reconciled;
+        else kept.push(reconciled);
         const duplicateUids = new Set(matches.map((row) => row.row_uid));
         duplicateUids.delete(canonical.row_uid);
         for (let i = kept.length - 1; i >= 0; i--) {
@@ -285,7 +313,10 @@ class WebStore implements LocalStore {
     });
 
     await writeJson(K.parts, merged);
-    void serverIds;
+    const queue = await readJson<PendingPhoto[]>(K.photos, []);
+    const removed = queue.filter((photo) => !merged.some((part) => part.row_uid === photo.row_uid));
+    for (const photo of removed) await idbPhotoRemove(photo.local_path);
+    await writeJson(K.photos, queue.filter((photo) => !removed.includes(photo)));
   }
 
   async getUsers(): Promise<User[]> {
@@ -392,7 +423,16 @@ class WebStore implements LocalStore {
     const q = await this.queue();
     if (part.server_id == null) {
       const ce = q.find((e) => e.row_uid === rowUid && e.action === "create");
-      if (ce?.status === "syncing") {
+      if (ce?.status === "failed" && ["invalid", "forbidden"].includes(ce.last_error ?? "")) {
+        // A definitive rejection cannot have created a server row. Fold any
+        // edits made during that request into the corrected create.
+        const edits = q.filter((e) => e.row_uid === rowUid && e.action === "update");
+        ce.payload = JSON.stringify(Object.assign(JSON.parse(ce.payload), ...edits.map((e) => JSON.parse(e.payload)), clean));
+        ce.status = "pending"; ce.retry_count = 0; ce.last_error = null;
+        await writeJson(K.queue, q.filter((e) => !edits.includes(e)));
+        return parts[idx];
+      }
+      if (ce && (ce.status === "syncing" || ce.retry_count > 0)) {
         // The create is already in flight. Never mutate that queue entry:
         // its server response must only settle that exact operation.
         // Keep the newer local edit as a deferred update; applyCreateOk()
@@ -450,7 +490,7 @@ class WebStore implements LocalStore {
 
     if (part.server_id == null) {
       const createEntry = q.find((e) => e.row_uid === rowUid && e.action === "create");
-      if (createEntry?.status === "syncing") {
+      if (createEntry && (createEntry.status === "syncing" || createEntry.retry_count > 0)) {
         const idx = parts.findIndex((p) => p.row_uid === rowUid);
         if (idx >= 0) parts[idx] = { ...part, pending_delete: 1, sync_state: "pending" };
         q.push({
@@ -459,12 +499,12 @@ class WebStore implements LocalStore {
           base_updated_at: null, created_at: nowIso(), retry_count: 0,
           last_error: null, status: "pending",
         });
-        for (const photo of photosForPart) await deleteWebPhotoBlob(photo.local_path);
+        for (const photo of photosForPart) await idbPhotoRemove(photo.local_path);
         await writeJson(K.photos, photoQueue.filter((p) => p.row_uid !== rowUid));
         await writeJson(K.parts, parts);
       } else {
-        q = q.filter((e) => !(e.row_uid === rowUid && e.action === "create"));
-        for (const photo of photosForPart) await deleteWebPhotoBlob(photo.local_path);
+        q = q.filter((e) => e.row_uid !== rowUid);
+        for (const photo of photosForPart) await idbPhotoRemove(photo.local_path);
         await writeJson(K.photos, photoQueue.filter((p) => p.row_uid !== rowUid));
         await writeJson(K.parts, parts.filter((p) => p.row_uid !== rowUid));
       }
@@ -474,7 +514,7 @@ class WebStore implements LocalStore {
       q = q.filter((e) => !(e.row_uid === rowUid && e.action === "update" && e.status === "pending"));
       const idx = parts.findIndex((p) => p.row_uid === rowUid);
       parts[idx] = { ...part, pending_delete: 1, sync_state: "pending" };
-      for (const photo of photosForPart) await deleteWebPhotoBlob(photo.local_path);
+      for (const photo of photosForPart) await idbPhotoRemove(photo.local_path);
       await writeJson(K.photos, photoQueue.filter((p) => p.row_uid !== rowUid));
       await writeJson(K.parts, parts);
       q.push({
@@ -510,6 +550,47 @@ class WebStore implements LocalStore {
     return Array.from(new Set(ids));
   }
 
+  async claimChange(queueId: string): Promise<PendingChange | null> {
+    const queue = await this.queue();
+    const entry = queue.find((e) => e.queue_id === queueId && e.status === "pending");
+    if (!entry || (entry.action !== "create" && entry.entity_id == null)) return null;
+    entry.status = "syncing";
+    // Retried creates remain immutable: their first request may have committed.
+    entry.retry_count = Math.max(1, entry.retry_count);
+    await writeJson(K.queue, queue);
+    return entry;
+  }
+  async getFailedChanges(): Promise<(PendingChange | PendingPhoto)[]> {
+    return [...await this.queue(), ...await readJson<PendingPhoto[]>(K.photos, [])].filter((e) => e.status === "failed");
+  }
+  async retryFailed(): Promise<void> {
+    const queue = await this.queue();
+    for (const e of queue) if (e.status === "failed") { e.status = "pending"; e.retry_count = e.action === "create" ? 1 : 0; e.last_error = null; }
+    const photos = await readJson<PendingPhoto[]>(K.photos, []);
+    for (const p of photos) if (p.status === "failed") { p.status = "pending"; p.retry_count = 0; p.last_error = null; }
+    const parts = await this.parts();
+    for (const p of parts) if (queue.some((e) => e.row_uid === p.row_uid)) p.sync_state = "pending";
+    await writeJson(K.queue, queue); await writeJson(K.photos, photos); await writeJson(K.parts, parts);
+  }
+  async discardFailed(): Promise<void> {
+    const failures = await this.getFailedChanges();
+    const rowUids = new Set(failures.filter((e) => "action" in e).map((e) => e.row_uid));
+    const orphaned = new Set(failures.filter((e) => "action" in e && e.action === "create").map((e) => e.row_uid));
+    const queue = (await this.queue()).filter((e) => e.status !== "failed" && !orphaned.has(e.row_uid));
+    const photos = await readJson<PendingPhoto[]>(K.photos, []);
+    for (const p of photos) if (p.status === "failed" || orphaned.has(p.row_uid)) await idbPhotoRemove(p.local_path);
+    await writeJson(K.photos, photos.filter((p) => p.status !== "failed" && !orphaned.has(p.row_uid)));
+    await writeJson(K.queue, queue);
+    const parts = await this.parts();
+    for (const part of parts) if (photos.some((photo) => photo.status === "failed" && photo.local_path === part.local_photo_path)) part.local_photo_path = null;
+    await writeJson(K.parts, parts.filter((p) => !rowUids.has(p.row_uid) || queue.some((e) => e.row_uid === p.row_uid)));
+    const session = await this.getSession();
+    if (session) await writeJson(K.session, { ...session, last_sync_at: null });
+  }
+  async reconcileAndSetCursor(data: { boats: Boat[]; categories: Category[]; parts: Part[]; users?: User[] }, serverTime: string): Promise<void> {
+    await this.reconcileInventory(data, await this.getProtectedServerIds());
+    await this.setLastSyncAt(serverTime);
+  }
   async markSyncing(queueIds: string[]): Promise<void> {
     const q = await this.queue();
     for (const e of q) if (queueIds.includes(e.queue_id)) e.status = "syncing";
@@ -618,8 +699,13 @@ class WebStore implements LocalStore {
     await writeJson(K.queue, remaining);
   }
   async applyDeleteOk(queueId: string, serverId: number): Promise<void> {
-    await writeJson(K.parts, (await this.parts()).filter((p) => p.server_id !== serverId));
-    await writeJson(K.queue, (await this.queue()).filter((e) => e.queue_id !== queueId));
+    const parts = await this.parts();
+    const removed = new Set(parts.filter((p) => p.server_id === serverId).map((p) => p.row_uid));
+    const photos = await readJson<PendingPhoto[]>(K.photos, []);
+    for (const photo of photos) if (photo.server_id === serverId || removed.has(photo.row_uid)) await idbPhotoRemove(photo.local_path);
+    await writeJson(K.photos, photos.filter((p) => p.server_id !== serverId && !removed.has(p.row_uid)));
+    await writeJson(K.parts, parts.filter((p) => p.server_id !== serverId));
+    await writeJson(K.queue, (await this.queue()).filter((e) => e.queue_id !== queueId && e.entity_id !== serverId && !removed.has(e.row_uid)));
   }
   async setLocalPhoto(rowUid: string, localPath: string): Promise<void> {
     const parts = await this.parts();
@@ -628,29 +714,41 @@ class WebStore implements LocalStore {
     parts[idx] = { ...parts[idx], local_photo_path: localPath };
     const q = await readJson<PendingPhoto[]>(K.photos, []);
     const previous = q.filter((p) => p.row_uid === rowUid);
-    for (const p of previous) if (p.local_path !== localPath) await deleteWebPhotoBlob(p.local_path);
-    const filtered = q.filter((p) => p.row_uid !== rowUid);
+    for (const p of previous) if (p.local_path !== localPath && p.status !== "uploading") await idbPhotoRemove(p.local_path);
+    const filtered = q.filter((p) => p.row_uid !== rowUid || p.status === "uploading");
     filtered.push({ queue_id: newQueueId(), row_uid: rowUid, server_id: parts[idx].server_id, local_path: localPath, retry_count: 0, last_error: null, status: "pending", created_at: nowIso() });
     await writeJson(K.parts, parts);
     await writeJson(K.photos, filtered);
   }
   async getPendingPhotos(): Promise<PendingPhoto[]> {
-    return readJson<PendingPhoto[]>(K.photos, []);
+    return (await readJson<PendingPhoto[]>(K.photos, [])).filter((p) => p.status === "pending" || p.status === "uploading");
   }
   async applyPhotoServerId(rowUid: string, serverId: number): Promise<void> {
     const q = await readJson<PendingPhoto[]>(K.photos, []);
     for (const p of q) if (p.row_uid === rowUid) p.server_id = serverId;
     await writeJson(K.photos, q);
   }
-  async applyPhotoOk(rowUid: string, serverUpdatedAt: string): Promise<void> {
+  async claimPhoto(queueId: string): Promise<PendingPhoto | null> {
+    const queue = await readJson<PendingPhoto[]>(K.photos, []);
+    const photo = queue.find((entry) => entry.queue_id === queueId && entry.status === "pending");
+    if (!photo || photo.server_id == null) return null;
+    photo.status = "uploading";
+    await writeJson(K.photos, queue);
+    return photo;
+  }
+  async applyPhotoOk(queueId: string, serverUpdatedAt: string): Promise<void> {
     const parts = await this.parts();
-    const idx = parts.findIndex((p) => p.row_uid === rowUid);
-    const q = await readJson<PendingPhoto[]>(K.photos, []);
-    const photo = q.find((p) => p.row_uid === rowUid);
-    if (idx >= 0) parts[idx] = { ...parts[idx], photo_path: "remote", local_photo_path: null, updated_at: serverUpdatedAt };
-    if (photo) await deleteWebPhotoBlob(photo.local_path);
+    const queue = await readJson<PendingPhoto[]>(K.photos, []);
+    const photo = queue.find((p) => p.queue_id === queueId);
+    if (!photo) return;
+    const idx = parts.findIndex((p) => p.row_uid === photo.row_uid);
+    if (idx >= 0) parts[idx] = {
+      ...parts[idx], photo_path: "remote", updated_at: serverUpdatedAt,
+      local_photo_path: parts[idx].local_photo_path === photo.local_path ? null : parts[idx].local_photo_path,
+    };
+    await idbPhotoRemove(photo.local_path);
     await writeJson(K.parts, parts);
-    await writeJson(K.photos, q.filter((p) => p.row_uid !== rowUid));
+    await writeJson(K.photos, queue.filter((p) => p.queue_id !== queueId));
   }
   async markPhotoRetry(queueId: string, lastError: string): Promise<void> {
     const q = await readJson<PendingPhoto[]>(K.photos, []);
@@ -695,4 +793,10 @@ class WebStore implements LocalStore {
   }
 }
 
-export const localStore: LocalStore = new WebStore();
+const implementation = new WebStore();
+export const localStore: LocalStore = new Proxy(implementation, {
+  get(target, property, receiver) {
+    const value = Reflect.get(target, property, receiver);
+    return typeof value === "function" ? (...args: unknown[]) => atomic(() => value.apply(target, args)) : value;
+  },
+});

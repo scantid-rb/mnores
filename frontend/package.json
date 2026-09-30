@@ -8,7 +8,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "build:pwa": "node scripts/build-pwa.cjs",
+    "test": "node tests/offline.cjs && node tests/sw.cjs && node tests/web.cjs",
+    "test:api": "python3 tests/api.py"
   },
   "dependencies": {
     "@expo/metro-runtime": "57.0.16",
@@ -56,7 +60,8 @@
     "eslint": "9.25.0",
     "eslint-config-expo": "57.0.2",
     "expo-doctor": "1.19.8",
-    "typescript": "6.0.3"
+    "typescript": "6.0.3",
+    "fake-indexeddb": "6.2.5"
   },
   "resolutions": {
     "expo-constants": "57.0.20",

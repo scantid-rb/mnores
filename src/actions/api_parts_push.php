@@ -29,15 +29,47 @@ $actor = api_require_auth();
 
 $rawBody = file_get_contents('php://input');
 $input = json_decode($rawBody, true);
-$changes = is_array($input['changes'] ?? null) ? $input['changes'] : [];
+if (!is_array($input) || !isset($input['changes']) || !is_array($input['changes']) || !array_is_list($input['changes'])) {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'changes debe ser una lista.']);
+    return;
+}
+$changes = $input['changes'];
+
+function push_valid_quantity($value): bool {
+    return is_int($value) && $value >= 0;
+}
+function push_valid_fields(array $c, PDO $pdo): bool {
+    foreach (['name', 'reference', 'category_id', 'location', 'quantity', 'notes'] as $field) {
+        if (!array_key_exists($field, $c)) return false;
+    }
+    if (!is_string($c['name']) || trim($c['name']) === '' || mb_strlen($c['name']) > 160) return false;
+    foreach (['reference' => 80, 'location' => 120, 'notes' => 65535] as $field => $limit) {
+        if ($c[$field] !== null && (!is_string($c[$field]) || mb_strlen($c[$field]) > $limit)) return false;
+    }
+    if (!push_valid_quantity($c['quantity']) || !is_int($c['category_id']) || $c['category_id'] <= 0) return false;
+    $category = $pdo->prepare('SELECT id FROM categories WHERE id=:id AND deleted_at IS NULL');
+    $category->execute([':id' => $c['category_id']]);
+    return (bool)$category->fetch();
+}
 
 $pdo = db();
 $results = [];
 
 foreach ($changes as $c) {
+    if (!is_array($c)) { $results[] = ['action' => '', 'status' => 'invalid']; continue; }
     $action = $c['action'] ?? '';
+    if (!is_string($action)) { $results[] = ['action' => '', 'status' => 'invalid']; continue; }
+    if (in_array($action, ['update', 'delete'], true) && (!isset($c['id']) || !is_int($c['id']) || $c['id'] <= 0)) {
+        $results[] = ['action' => $action, 'status' => 'invalid'];
+        continue;
+    }
 
     try {
+    // Acquire the SQLite writer lock before reading a part or touching photos.
+    // The mutation and its audit records commit together.
+    $pdo->beginTransaction();
+    $pdo->exec('UPDATE parts SET id=id WHERE id=-1');
 
     // ---------- EDITAR PIEZA EXISTENTE ----------
     if ($action === 'update') {
@@ -74,7 +106,16 @@ foreach ($changes as $c) {
 
         $quantityOnly = array_key_exists('quantity', $c) && !$hasFullField;
 
-        $qty = max(0, (int)($c['quantity'] ?? 0));
+        if (($quantityOnly && !push_valid_quantity($c['quantity']))
+            || (!$quantityOnly && !push_valid_fields($c, $pdo))) {
+            $results[] = ['action' => 'update', 'id' => $id, 'status' => 'invalid'];
+            continue;
+        }
+        if (!$quantityOnly && !$canEditAll) {
+            $results[] = ['action' => 'update', 'id' => $id, 'status' => 'forbidden'];
+            continue;
+        }
+        $qty = (int)$c['quantity'];
         $now = api_now();
 
         if ($quantityOnly) {
@@ -202,7 +243,7 @@ foreach ($changes as $c) {
 
         $now = api_now();
         $pdo->prepare(
-            'UPDATE parts SET deleted_at=:d, updated_at=:t WHERE id=:id'
+            'UPDATE parts SET photo_path=NULL, deleted_at=:d, updated_at=:t WHERE id=:id'
         )->execute([
             ':d' => $now,
             ':t' => $now,
@@ -228,17 +269,11 @@ foreach ($changes as $c) {
 
     // ---------- CREAR PIEZA NUEVA ----------
     if ($action === 'create') {
-        $localId  = trim((string)($c['local_id'] ?? ''));
-        $boatId   = (int)($c['boat_id'] ?? 0);
-        $name     = trim((string)($c['name'] ?? ''));
-        $reference= trim((string)($c['reference'] ?? ''));
-        $location = trim((string)($c['location'] ?? ''));
-        $notes    = trim((string)($c['notes'] ?? ''));
-        $catId    = (int)($c['category_id'] ?? 0) ?: null;
-        $qty      = max(0, (int)($c['quantity'] ?? 0));
+        $localId  = is_string($c['local_id'] ?? null) ? trim($c['local_id']) : '';
+        $boatId   = is_int($c['boat_id'] ?? null) ? $c['boat_id'] : 0;
         $now      = api_now();
 
-        if ($boatId <= 0 || $name === '' || $localId === '') {
+        if ($boatId <= 0 || $localId === '' || strlen($localId) > 200) {
             $results[] = ['action' => 'create', 'local_id' => $localId, 'status' => 'invalid'];
             continue;
         }
@@ -263,6 +298,21 @@ foreach ($changes as $c) {
             ];
             continue;
         }
+
+        // An already applied create remains idempotent even if its category
+        // was subsequently removed. Validate the catalog only for new rows.
+        $boat = $pdo->prepare('SELECT id FROM boats WHERE id=:id AND deleted_at IS NULL');
+        $boat->execute([':id' => $boatId]);
+        if (!push_valid_fields($c, $pdo) || !$boat->fetch()) {
+            $results[] = ['action' => 'create', 'local_id' => $localId, 'status' => 'invalid'];
+            continue;
+        }
+        $name = trim($c['name']);
+        $reference = trim($c['reference'] ?? '');
+        $location = trim($c['location'] ?? '');
+        $notes = trim($c['notes'] ?? '');
+        $catId = $c['category_id'];
+        $qty = $c['quantity'];
 
         $pdo->prepare(
             'INSERT INTO parts (boat_id,name,name_norm,reference,reference_norm,category_id,
@@ -297,12 +347,16 @@ foreach ($changes as $c) {
 
     $results[] = ['action' => $action, 'status' => 'unknown_action'];
     } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_log("parts/push: " . $e->getMessage());
         http_response_code(500);
         echo json_encode([
             'ok' => false,
             'error' => 'server_error',
         ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         exit;
+    } finally {
+        if ($pdo->inTransaction()) $pdo->commit();
     }
 }
 

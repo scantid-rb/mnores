@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { registerPwa } from "@/src/services/pwa";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -16,6 +18,7 @@ import { SyncProvider } from "@/src/state/SyncContext";
 LogBox.ignoreAllLogs(true);
 
 export default function RootLayout() {
+  useEffect(() => { registerPwa(); }, []);
   // One app level ErrorBoundary; a render crash shows a reload screen
   // instead of a blank app.
   return (

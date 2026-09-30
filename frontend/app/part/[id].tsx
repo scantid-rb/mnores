@@ -4,10 +4,9 @@
 
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Platform } from "react-native";
+import { Platform , Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { Modal, Pressable, ScrollView, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

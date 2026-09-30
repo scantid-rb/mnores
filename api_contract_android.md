@@ -230,7 +230,7 @@ Campos:
 }
 ```
 
-Cuando solo se proporciona `quantity`, se modifica únicamente esa columna y `updated_at`. Es la modalidad destinada especialmente a `mechanic` y a los botones +/−.
+`quantity` debe ser un entero JSON no negativo. Cuando solo se proporciona `quantity`, se modifica únicamente esa columna y `updated_at`. Es la modalidad destinada especialmente a `mechanic` y a los botones +/−.
 
 #### Conflictos
 
@@ -670,3 +670,21 @@ La versión Android (`APP_VERSION`) es independiente de `API_VERSION`.
 | POST | `/api/backups/restore-upload` | Sí | Restaurar ZIP local (admin) |
 
 **Fin del contrato API 1.4.4.**
+
+
+## Validación y sincronización en la rama pwa
+
+Un update completo debe incluir `name`, `reference`, `category_id`, `location`,
+`quantity` y `notes`. Un update parcial de otros campos devuelve `invalid` y
+no modifica la pieza. `name` es una cadena no vacía (máximo 160 caracteres);
+`reference`, `location` y `notes` permiten null o cadenas de hasta 80, 120 y
+65535 caracteres, respectivamente. `category_id` debe ser un entero que
+identifique una categoría vigente. Una creación exige además un barco vigente
+y un `local_id` no vacío (máximo 200 bytes). Los reintentos de un create ya
+aplicado mantienen el mismo ID. Cada mutación y su auditoría se confirman
+en una transacción SQLite.
+
+Las fotografías de piezas borradas devuelven 404. El borrado conserva la fila
+como tombstone y limpia `photo_path`. El borrado físico de un barco con piezas
+(incluidos tombstones) devuelve 409; se puede desactivar el barco. Así se
+conservan las referencias requeridas por la sincronización incremental.

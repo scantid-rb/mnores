@@ -8,6 +8,11 @@ RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
 # Si el archivo o carpeta solicitado existe físicamente (assets, imágenes, etc.),
 # se sirve tal cual y no se reescribe.
+RewriteCond %{DOCUMENT_ROOT}/pwa/index.html -f
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^pwa/.*$ pwa/index.html [L]
+
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 

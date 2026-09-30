@@ -48,7 +48,6 @@ export interface Part {
   quantity: number;
   notes: string | null;
   photo_path: string | null;
-  local_photo_path: string | null;
   updated_at: string | null;
   deleted_at?: string | null;
 }
@@ -92,6 +91,7 @@ export interface PendingPhoto {
 }
 
 export interface LocalPart {
+  local_photo_path: string | null;
   row_uid: string;
   server_id: number | null;
   local_id: string | null;

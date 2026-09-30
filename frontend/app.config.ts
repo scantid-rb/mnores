@@ -67,12 +67,13 @@ const config: ExpoConfig = {
                 buildArchs: ["arm64-v8a"],
               },
             },
-          ],
+          ] as [string, { android: { buildArchs: string[] } }],
         ]
       : []),
   ],
 
   experiments: {
+    baseUrl: process.env.PWA_BASE_PATH || "",
     typedRoutes: true,
   },
 

@@ -1,6 +1,6 @@
 # Inventario de Repuestos para Barcos — V1 - este es un proyecto personal, el objetivo de este git y las explicaciones es dejar un punto de partida para mis compañeros de trabajo el día que yo marche de la empresa u otra persona decida continuar donde quedo el proyecto
 
-Aplicación web sencilla para gestionar el inventario de repuestos de una flota pequeña de barcos (~6 barcos, ~18 usuarios). Escrita en PHP 8.3 con SQLite. Sin frameworks JS, sin servicios externos, sin dependencias en la nube.
+Aplicación web sencilla para gestionar el inventario de repuestos de una flota pequeña de barcos (~6 barcos, ~18 usuarios). Escrita en PHP 8.3 con SQLite. El servidor PHP no requiere frameworks JS ni servicios externos. Esta rama añade un cliente PWA Expo/React en `frontend/`.
 
 ## Estado actual del proyecto (léeme si vas a continuar este trabajo)
 
@@ -25,6 +25,10 @@ Aplicación web sencilla para gestionar el inventario de repuestos de una flota 
   sección dedicada más abajo y el archivo `api_contract_android.md`
   (documento vivo con el contrato exacto de la API — actualizarlo si se
   añaden/cambian endpoints).
+
+## Cliente PWA de esta rama
+
+Las instrucciones de compilación, pruebas, HTTPS y publicación del cliente están en [frontend/README_PWA.md](frontend/README_PWA.md). El código actual usa la estructura plana: `index.php` es el front controller de la raíz. La PWA compilada se publica en `/pwa/`, con la API PHP en `/api/...`. El funcionamiento offline del navegador requiere HTTPS o localhost.
 
 ## Requisitos
 
@@ -56,7 +60,7 @@ Aplicación web sencilla para gestionar el inventario de repuestos de una flota 
    - **Servidor embebido (rápido para probar):**
      ```bash
      cd /var/www/inventario
-     php -S 0.0.0.0:8080 -t public/ router.php
+     php -S 0.0.0.0:8080 router.php
      ```
    - **Apache**: apuntar `DocumentRoot` a `public/`. El `.htaccess` incluido en `data/` bloquea el acceso HTTP a la BD y a las fotografías.
    - **Nginx**: apuntar `root` a `public/` y usar `try_files $uri /index.php;`. Denegar `location ~ ^/(data|src|vendor)/`.

@@ -136,9 +136,7 @@ async function processQueue(token: string): Promise<SyncSummary> {
     protectedIds: [], missingActiveIds: [],
   };
 
-  const pending = (await localStore.getPendingChanges()).filter(
-    (entry) => entry.action === "create" || entry.entity_id != null,
-  );
+  const pending = await localStore.getPendingChanges();
   console.info("[PWA-SYNC] queue before", {
     count: pending.length,
     entries: pending.map((e) => ({
@@ -154,7 +152,13 @@ async function processQueue(token: string): Promise<SyncSummary> {
 
   let errDiag: SyncDiagnostics | null = null;
 
-  for (const entry of pending) {
+  const attempted = new Set<string>();
+  for (;;) {
+    const candidate = (await localStore.getPendingChanges()).find((e) => e.status === "pending" && !attempted.has(e.queue_id));
+    if (!candidate) break;
+    attempted.add(candidate.queue_id);
+    const entry = await localStore.claimChange(candidate.queue_id);
+    if (!entry) continue;
     summary.pushed++;
     console.info("[PWA-SYNC] sending", {
       queue_id: entry.queue_id,
@@ -162,7 +166,6 @@ async function processQueue(token: string): Promise<SyncSummary> {
       row_uid: entry.row_uid,
       client_local_id: entry.client_local_id,
     });
-    await localStore.markSyncing([entry.queue_id]);
 
     let response;
     try {
@@ -273,8 +276,9 @@ async function processQueue(token: string): Promise<SyncSummary> {
 
 async function processPhotoQueue(token: string, summary: SyncSummary): Promise<void> {
   const photos = await localStore.getPendingPhotos();
-  for (const photo of photos) {
-    if (photo.server_id == null) continue;
+  for (const candidate of photos) {
+    const photo = await localStore.claimPhoto(candidate.queue_id);
+    if (!photo || photo.server_id == null) continue;
     const exists = await photoExists(photo.local_path);
     if (!exists) {
       await localStore.markPhotoRetry(photo.queue_id, "archivo local de foto no encontrado");
@@ -295,17 +299,19 @@ async function processPhotoQueue(token: string, summary: SyncSummary): Promise<v
     }
     try {
       const result = await uploadPartPhoto(token, photo.server_id, photo.local_path);
-      await localStore.applyPhotoOk(photo.row_uid, result.updated_at);
+      await localStore.applyPhotoOk(photo.queue_id, result.updated_at);
     } catch (e) {
       if (e instanceof ApiError) {
         const d = errorDiag(e, `/api/photos/${photo.server_id}`, "POST");
         summary.diagnostics = summary.diagnostics ?? d;
         if (e.status === 401 || e.status === 403) {
           summary.authError = true;
+          await localStore.markPhotoRetry(photo.queue_id, "Sesión no autorizada");
           return;
         }
         if (e.kind === "network" || e.kind === "timeout") {
           summary.networkError = true;
+          await localStore.markPhotoRetry(photo.queue_id, "Sin conexión");
           return;
         }
         summary.serverError = true;
@@ -352,7 +358,7 @@ function mergeParts(current: LocalPart[], delta: Part[]): Part[] {
   return mergeById(currentServerParts, delta);
 }
 
-export async function pullAndReconcile(token: string): Promise<{ receivedParts: number; cachedParts: number }> {
+export async function pullAndReconcile(token: string): Promise<Pick<SyncSummary, "receivedParts" | "receivedActiveParts" | "receivedDeletedParts" | "cachedParts" | "protectedIds" | "missingActiveIds">> {
   const session = await localStore.getSession();
   const lastSyncAt = session?.last_sync_at ?? null;
 
@@ -370,9 +376,8 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
 
   if (!lastSyncAt) {
     // First sync: the API returns the complete visible dataset.
-    await localStore.reconcileInventory(
-      { boats: authoritativeBoats, users: authoritativeUsers, categories: authoritativeCategories, parts: sync.parts ?? [] },
-      protectedIds,
+    await localStore.reconcileAndSetCursor(
+      { boats: authoritativeBoats, users: authoritativeUsers, categories: authoritativeCategories, parts: sync.parts ?? [] }, sync.server_time,
     );
   } else {
     // Incremental sync: /api/sync returns only changed rows. Merge those
@@ -384,15 +389,13 @@ export async function pullAndReconcile(token: string): Promise<{ receivedParts: 
     const categories = authoritativeCategories;
     const parts = mergeParts(currentParts, sync.parts ?? []);
 
-    await localStore.reconcileInventory(
-      { boats, users: authoritativeUsers, categories, parts },
-      protectedIds,
+    await localStore.reconcileAndSetCursor(
+      { boats, users: authoritativeUsers, categories, parts }, sync.server_time,
     );
   }
 
   // Advance the cursor only after the complete reconciliation transaction
   // succeeds. The cursor is the server-provided time, never the device clock.
-  await localStore.setLastSyncAt(sync.server_time);
   const counts = await localStore.getCounts();
   const receivedParts = sync.parts ?? [];
   const cached = await localStore.searchParts({});
@@ -456,5 +459,15 @@ export async function runSync(token: string): Promise<SyncSummary> {
     await processPhotoQueue(token, summary);
   }
 
+  const failures = await localStore.getFailedChanges();
+  if (failures.length > 0) {
+    summary.failed = Math.max(summary.failed, failures.length);
+    summary.diagnostics ??= {
+      path: "cola local", method: "POST", httpStatus: null, kind: "queue_failure",
+      timeout: false, fetchError: false, parseOk: true,
+      bodySnippet: failures.map((entry) => entry.last_error ?? "Operación fallida").join("; ").slice(0, 300),
+      classification: "failed", at: new Date().toISOString(),
+    };
+  }
   return summary;
 }

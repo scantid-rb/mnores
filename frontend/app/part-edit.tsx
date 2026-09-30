@@ -101,13 +101,14 @@ export default function PartEditScreen() {
         : { quantity: parsedQty };
       updatePart.mutate({ rowUid: String(rowUid), fields }, { onSuccess: () => router.back() });
     } else {
-      if (boatId == null && user?.boat_id == null) {
+      const targetBoatId = boatId ?? user?.boat_id;
+      if (targetBoatId == null) {
         setError("Selecciona un barco.");
         return;
       }
       createPart.mutate(
         {
-          boat_id: boatId ?? user.boat_id,
+          boat_id: targetBoatId,
           name: name.trim(),
           reference: reference.trim() || null,
           category_id: categoryId,

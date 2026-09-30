@@ -1,5 +1,6 @@
+import { Alert } from "@/src/utils/alert";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBadge } from "@/src/components/StatusBadge";

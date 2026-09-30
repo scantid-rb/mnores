@@ -1,10 +1,10 @@
+import { prepareBackupTarget, saveBackupDownload } from "@/src/services/backups/files";
+import { Alert } from "@/src/utils/alert";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
-import * as FileSystem from "expo-file-system/legacy";
-import * as Sharing from "expo-sharing";
 
 import {
   apiCreateBackup,
@@ -103,18 +103,9 @@ export default function BackupsScreen() {
     setBusy(true);
     setError(null);
     try {
-      const dir = `${FileSystem.cacheDirectory}backups/`;
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-      const uri = await apiDownloadBackup(token, item.name, `${dir}${item.name}`);
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: "application/zip",
-          dialogTitle: `Guardar ${item.name}`,
-          UTI: "com.pkware.zip-archive",
-        });
-      } else {
-        Alert.alert("Backup descargado", `Archivo guardado temporalmente en: ${uri}`);
-      }
+      const target = await prepareBackupTarget(item.name);
+      const uri = await apiDownloadBackup(token, item.name, target);
+      await saveBackupDownload(uri, item.name);
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo descargar el backup.");
     } finally {
