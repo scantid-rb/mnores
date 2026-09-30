@@ -192,6 +192,7 @@ function db_migrate(PDO $pdo): void {
     // Índices necesarios para el delta incremental y los tombstones.
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_updated_at ON parts(updated_at)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_deleted_at ON parts(deleted_at)");
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_boats_deleted_at ON boats(deleted_at)");
 
     // --- Soporte API Android: columnas añadidas después del lanzamiento inicial.
     // db_init_schema() ya las crea en instalaciones nuevas; esto cubre las
