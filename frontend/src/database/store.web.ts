@@ -447,8 +447,21 @@ class WebStore implements LocalStore {
     let q = await this.queue();
 
     if (part.server_id == null) {
-      q = q.filter((e) => !(e.row_uid === rowUid && e.action === "create"));
-      await writeJson(K.parts, parts.filter((p) => p.row_uid !== rowUid));
+      const createEntry = q.find((e) => e.row_uid === rowUid && e.action === "create");
+      if (createEntry?.status === "syncing") {
+        const idx = parts.findIndex((p) => p.row_uid === rowUid);
+        if (idx >= 0) parts[idx] = { ...part, pending_delete: 1, sync_state: "pending" };
+        q.push({
+          queue_id: newQueueId(), action: "delete", entity: "part", entity_id: null,
+          row_uid: rowUid, client_local_id: null, payload: JSON.stringify({}),
+          base_updated_at: null, created_at: nowIso(), retry_count: 0,
+          last_error: null, status: "pending",
+        });
+        await writeJson(K.parts, parts);
+      } else {
+        q = q.filter((e) => !(e.row_uid === rowUid && e.action === "create"));
+        await writeJson(K.parts, parts.filter((p) => p.row_uid !== rowUid));
+      }
     } else {
       q = q.filter((e) => !(e.row_uid === rowUid && e.action === "update" && e.status === "pending"));
       const idx = parts.findIndex((p) => p.row_uid === rowUid);
@@ -538,7 +551,9 @@ class WebStore implements LocalStore {
       .map((e) =>
         e.row_uid === rowUid && e.action === "update" && e.entity_id == null
           ? { ...e, entity_id: serverId, base_updated_at: updatedAt }
-          : e,
+          : e.action === "delete" && e.row_uid === rowUid && e.entity_id == null
+            ? { ...e, entity_id: serverId, base_updated_at: updatedAt, payload: JSON.stringify({ id: serverId }) }
+            : e,
       );
     console.info("[PWA-SYNC] applyCreateOk removing queue", {
       queue_id: queueId,
