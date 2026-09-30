@@ -301,11 +301,12 @@ class WebStore implements LocalStore {
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async searchParts(opts: { query?: string; categoryId?: number | null }): Promise<LocalPart[]> {
+  async searchParts(opts: { query?: string; categoryId?: number | null; boatId?: number | null }): Promise<LocalPart[]> {
     const q = opts.query?.trim().toLowerCase();
     return (await this.parts())
       .filter((p) => p.pending_delete === 0 && !p.deleted_at)
       .filter((p) => (opts.categoryId != null ? p.category_id === opts.categoryId : true))
+      .filter((p) => (opts.boatId != null ? p.boat_id === opts.boatId : true))
       .filter((p) => {
         if (!q) return true;
         return (
@@ -391,15 +392,33 @@ class WebStore implements LocalStore {
     const q = await this.queue();
     if (part.server_id == null) {
       const ce = q.find((e) => e.row_uid === rowUid && e.action === "create");
-      if (ce) {
+      if (ce?.status === "syncing") {
+        // The create is already in flight. Never mutate that queue entry:
+        // its server response must only settle that exact operation.
+        // Keep the newer local edit as a deferred update; applyCreateOk()
+        // will attach the newly assigned server_id before the next pass.
+        q.push({
+          queue_id: newQueueId(),
+          action: "update",
+          entity: "part",
+          entity_id: null,
+          row_uid: rowUid,
+          client_local_id: null,
+          payload: JSON.stringify(clean),
+          base_updated_at: null,
+          created_at: nowIso(),
+          retry_count: 0,
+          last_error: null,
+          status: "pending",
+        });
+      } else if (ce) {
         ce.payload = JSON.stringify({ ...JSON.parse(ce.payload || "{}"), ...clean });
         ce.status = "pending";
       }
     } else {
-      const ue = q.find((e) => e.row_uid === rowUid && e.action === "update" && (e.status === "pending" || e.status === "syncing"));
+      const ue = q.find((e) => e.row_uid === rowUid && e.action === "update" && e.status === "pending");
       if (ue) {
         ue.payload = JSON.stringify({ ...JSON.parse(ue.payload || "{}"), ...clean });
-        ue.status = "pending";
       } else {
         q.push({
           queue_id: newQueueId(),
@@ -504,7 +523,13 @@ class WebStore implements LocalStore {
     for (const photo of photos) if (photo.row_uid === rowUid) photo.server_id = serverId;
     await writeJson(K.photos, photos);
 
-    const queueAfter = queueBefore.filter((e) => e.queue_id !== queueId);
+    const queueAfter = queueBefore
+      .filter((e) => e.queue_id !== queueId)
+      .map((e) =>
+        e.row_uid === rowUid && e.action === "update" && e.entity_id == null
+          ? { ...e, entity_id: serverId, base_updated_at: updatedAt }
+          : e,
+      );
     console.info("[PWA-SYNC] applyCreateOk removing queue", {
       queue_id: queueId,
       removed: queueAfter.length !== queueBefore.length,
@@ -522,11 +547,30 @@ class WebStore implements LocalStore {
   }
   async applyUpdateOk(queueId: string, serverId: number, updatedAt: string): Promise<void> {
     const parts = await this.parts();
+    const q = await this.queue();
+    const remaining = q.filter((e) => e.queue_id !== queueId);
+    const hasPendingForRow = remaining.some(
+      (e) => e.row_uid === q.find((x) => x.queue_id === queueId)?.row_uid
+        && (e.status === "pending" || e.status === "syncing"),
+    );
     for (let i = 0; i < parts.length; i++) {
-      if (parts[i].server_id === serverId) parts[i] = { ...parts[i], updated_at: updatedAt, sync_state: "synced" };
+      if (parts[i].server_id === serverId) {
+        parts[i] = {
+          ...parts[i],
+          updated_at: updatedAt,
+          sync_state: hasPendingForRow ? "pending" : "synced",
+        };
+      }
+    }
+    // A newer operation may already be queued for the same row. Advance its
+    // optimistic concurrency base to the server version just written.
+    for (const e of remaining) {
+      if (e.row_uid === q.find((x) => x.queue_id === queueId)?.row_uid && e.action === "update" && e.entity_id === serverId) {
+        e.base_updated_at = updatedAt;
+      }
     }
     await writeJson(K.parts, parts);
-    await writeJson(K.queue, (await this.queue()).filter((e) => e.queue_id !== queueId));
+    await writeJson(K.queue, remaining);
   }
   async applyDeleteOk(queueId: string, serverId: number): Promise<void> {
     await writeJson(K.parts, (await this.parts()).filter((p) => p.server_id !== serverId));
