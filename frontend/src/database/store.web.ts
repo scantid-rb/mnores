@@ -484,6 +484,9 @@ class WebStore implements LocalStore {
     const idx = parts.findIndex((p) => p.row_uid === rowUid);
     if (idx >= 0) parts[idx] = { ...parts[idx], server_id: serverId, updated_at: updatedAt, sync_state: "synced" };
     await writeJson(K.parts, parts);
+    const photos = await readJson<PendingPhoto[]>(K.photos, []);
+    for (const photo of photos) if (photo.row_uid === rowUid) photo.server_id = serverId;
+    await writeJson(K.photos, photos);
     await writeJson(K.queue, (await this.queue()).filter((e) => e.queue_id !== queueId));
   }
   async applyUpdateOk(queueId: string, serverId: number, updatedAt: string): Promise<void> {
