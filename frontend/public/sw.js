@@ -1,7 +1,9 @@
-const CACHE_NAME = "shipinventory-shell-v2";
+const CACHE_NAME = "shipinventory-shell-v3";
+
 const APP_SHELL = [
   "/",
   "/manifest.json",
+  "/icon.svg",
 ];
 
 self.addEventListener("install", (event) => {
@@ -22,8 +24,8 @@ self.addEventListener("activate", (event) => {
             .map((key) => caches.delete(key))
         )
       )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -34,6 +36,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // API responses must never enter the static/runtime cache.
   if (url.pathname.startsWith("/api/")) {
     return;
   }
@@ -44,13 +47,25 @@ self.addEventListener("fetch", (event) => {
         return cached;
       }
 
-      return fetch(request).then((response) => {
-        if (response.ok && response.type === "basic") {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-        }
-        return response;
-      });
+      return fetch(request)
+        .then((response) => {
+          if (response.ok && response.type === "basic") {
+            const copy = response.clone();
+            event.waitUntil(
+              caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
+            );
+          }
+          return response;
+        })
+        .catch(async () => {
+          // For document navigations, serve the cached application shell when
+          // the browser is offline and the exact route is not cached yet.
+          if (request.mode === "navigate") {
+            const shell = await caches.match("/");
+            if (shell) return shell;
+          }
+          throw new Error("Recurso no disponible sin conexión.");
+        });
     })
   );
 });
