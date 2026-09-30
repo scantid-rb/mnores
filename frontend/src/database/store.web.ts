@@ -6,8 +6,9 @@
 // The LocalStore contract remains unchanged so repositories/sync code are shared
 // with native SQLite. Values are stored by logical key inside one IDB object store.
 const DB_NAME = "shipinventory-web";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = "kv";
+const PHOTO_STORE_NAME = "photos";
 
 interface KvRecord { key: string; value: unknown; }
 
@@ -24,6 +25,7 @@ function openDb(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME, { keyPath: "key" });
+      if (!db.objectStoreNames.contains(PHOTO_STORE_NAME)) db.createObjectStore(PHOTO_STORE_NAME, { keyPath: "key" });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("No se pudo abrir IndexedDB."));
@@ -50,6 +52,46 @@ async function idbSet(key: string, value: unknown): Promise<void> {
     tx.onerror = () => reject(tx.error ?? new Error("No se pudo escribir IndexedDB."));
     tx.onabort = () => reject(tx.error ?? new Error("Escritura de IndexedDB abortada."));
   });
+}
+
+async function idbPhotoSet(key: string, blob: Blob): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE_NAME, "readwrite");
+    tx.objectStore(PHOTO_STORE_NAME).put({ key, blob });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("No se pudo guardar la foto en IndexedDB."));
+    tx.onabort = () => reject(tx.error ?? new Error("Guardado de foto en IndexedDB abortado."));
+  });
+}
+
+async function idbPhotoGet(key: string): Promise<Blob | null> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE_NAME, "readonly");
+    const request = tx.objectStore(PHOTO_STORE_NAME).get(key);
+    request.onsuccess = () => resolve((request.result as { key: string; blob: Blob } | undefined)?.blob ?? null);
+    request.onerror = () => reject(request.error ?? new Error("No se pudo leer la foto de IndexedDB."));
+  });
+}
+
+async function idbPhotoRemove(key: string): Promise<void> {
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PHOTO_STORE_NAME, "readwrite");
+    tx.objectStore(PHOTO_STORE_NAME).delete(key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("No se pudo eliminar la foto de IndexedDB."));
+    tx.onabort = () => reject(tx.error ?? new Error("Eliminación de foto de IndexedDB abortada."));
+  });
+}
+
+export const saveWebPhotoBlob = idbPhotoSet;
+export const getWebPhotoBlob = idbPhotoGet;
+export const deleteWebPhotoBlob = idbPhotoRemove;
+
+export async function hasWebPhotoBlob(key: string): Promise<boolean> {
+  return (await idbPhotoGet(key)) !== null;
 }
 
 async function idbRemove(key: string): Promise<void> {
