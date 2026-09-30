@@ -201,3 +201,8 @@ export async function uploadPartPhoto(token: string, partId: number, localPath: 
 export function remotePartPhotoUrl(partId: number): string {
   return `${getServerUrlSync()}/api/photos/${partId}`;
 }
+
+
+export async function resolveLocalPhotoUri(localPath: string | null | undefined): Promise<string | null> {
+  return localPath ?? null;
+}
