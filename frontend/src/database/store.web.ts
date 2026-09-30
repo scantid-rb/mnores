@@ -480,14 +480,45 @@ class WebStore implements LocalStore {
   }
 
   async applyCreateOk(queueId: string, rowUid: string, serverId: number, updatedAt: string): Promise<void> {
+    const queueBefore = await this.queue();
+    console.info("[PWA-SYNC] applyCreateOk start", {
+      queue_id: queueId,
+      row_uid: rowUid,
+      server_id: serverId,
+      queue_count: queueBefore.length,
+      queue_ids: queueBefore.map((e) => e.queue_id),
+    });
+
     const parts = await this.parts();
     const idx = parts.findIndex((p) => p.row_uid === rowUid);
+    console.info("[PWA-SYNC] applyCreateOk part lookup", {
+      row_uid: rowUid,
+      part_found: idx >= 0,
+      part_server_id: idx >= 0 ? parts[idx].server_id : null,
+    });
+
     if (idx >= 0) parts[idx] = { ...parts[idx], server_id: serverId, updated_at: updatedAt, sync_state: "synced" };
     await writeJson(K.parts, parts);
+
     const photos = await readJson<PendingPhoto[]>(K.photos, []);
     for (const photo of photos) if (photo.row_uid === rowUid) photo.server_id = serverId;
     await writeJson(K.photos, photos);
-    await writeJson(K.queue, (await this.queue()).filter((e) => e.queue_id !== queueId));
+
+    const queueAfter = queueBefore.filter((e) => e.queue_id !== queueId);
+    console.info("[PWA-SYNC] applyCreateOk removing queue", {
+      queue_id: queueId,
+      removed: queueAfter.length !== queueBefore.length,
+      before: queueBefore.length,
+      after: queueAfter.length,
+    });
+    await writeJson(K.queue, queueAfter);
+
+    const queueVerified = await this.queue();
+    console.info("[PWA-SYNC] applyCreateOk verified", {
+      queue_count: queueVerified.length,
+      queue_ids: queueVerified.map((e) => e.queue_id),
+      target_still_present: queueVerified.some((e) => e.queue_id === queueId),
+    });
   }
   async applyUpdateOk(queueId: string, serverId: number, updatedAt: string): Promise<void> {
     const parts = await this.parts();
