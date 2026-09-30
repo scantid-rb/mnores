@@ -4,8 +4,7 @@
 // the existing local cache.
 
 import { ApiError } from "@/src/services/api/client";
-import { uploadPartPhoto } from "@/src/services/photos/photoService";
-import * as FileSystem from "expo-file-system/legacy";
+import { photoExists, uploadPartPhoto } from "@/src/services/photos/photoService";
 import { apiGetBoats, apiGetCategories, apiGetSync, apiGetUsers, apiPush } from "@/src/services/api/endpoints";
 import { localStore } from "@/src/database/store";
 import { LocalPart, Part, PendingChange, PushChange, PushResult } from "@/src/types";
@@ -222,8 +221,8 @@ async function processPhotoQueue(token: string, summary: SyncSummary): Promise<v
   const photos = await localStore.getPendingPhotos();
   for (const photo of photos) {
     if (photo.server_id == null) continue;
-    const info = await FileSystem.getInfoAsync(photo.local_path);
-    if (!info.exists) {
+    const exists = await photoExists(photo.local_path);
+    if (!exists) {
       await localStore.markPhotoRetry(photo.queue_id, "archivo local de foto no encontrado");
       summary.serverError = true;
       summary.diagnostics = {
