@@ -136,7 +136,9 @@ async function processQueue(token: string): Promise<SyncSummary> {
     protectedIds: [], missingActiveIds: [],
   };
 
-  const pending = await localStore.getPendingChanges();
+  const pending = (await localStore.getPendingChanges()).filter(
+    (entry) => entry.action === "create" || entry.entity_id != null,
+  );
   console.info("[PWA-SYNC] queue before", {
     count: pending.length,
     entries: pending.map((e) => ({
