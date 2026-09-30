@@ -516,7 +516,17 @@ class WebStore implements LocalStore {
       part_server_id: idx >= 0 ? parts[idx].server_id : null,
     });
 
-    if (idx >= 0) parts[idx] = { ...parts[idx], server_id: serverId, updated_at: updatedAt, sync_state: "synced" };
+    const hasDeferredUpdate = queueBefore.some(
+      (e) => e.queue_id !== queueId && e.row_uid === rowUid && e.action === "update",
+    );
+    if (idx >= 0) {
+      parts[idx] = {
+        ...parts[idx],
+        server_id: serverId,
+        updated_at: updatedAt,
+        sync_state: hasDeferredUpdate ? "pending" : "synced",
+      };
+    }
     await writeJson(K.parts, parts);
 
     const photos = await readJson<PendingPhoto[]>(K.photos, []);
