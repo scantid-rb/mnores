@@ -7,7 +7,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
 // Todos ven la lista; solo admin/inspector pueden mutar (chequeado en cada acción).
 if ($path === '/boats' && $method === 'GET') {
-    $rows = db()->query('SELECT b.*, (SELECT COUNT(*) FROM users u WHERE u.boat_id = b.id) AS users_count FROM boats b WHERE b.deleted_at IS NULL ORDER BY b.name')->fetchAll();
+    $rows = db()->query('SELECT b.*, (SELECT COUNT(*) FROM users u WHERE u.boat_id = b.id) AS users_count FROM boats b ORDER BY b.name')->fetchAll();
     render('boats/index', ['title' => 'Barcos', 'actor' => $actor, 'rows' => $rows]);
     return;
 }
@@ -75,15 +75,15 @@ if (preg_match('#^/boats/(\d+)/delete$#', $path, $m) && $method === 'POST') {
     $b = _load_boat((int)$m[1]);
     if (!$b) { http_response_code(404); echo 'No encontrado'; return; }
     $users = (int)db()->query('SELECT COUNT(*) FROM users WHERE boat_id = ' . (int)$b['id'])->fetchColumn();
-    $parts = (int)db()->query('SELECT COUNT(*) FROM parts WHERE boat_id = ' . (int)$b['id'] . ' AND deleted_at IS NULL')->fetchColumn();
+    $parts = (int)db()->query('SELECT COUNT(*) FROM parts WHERE boat_id = ' . (int)$b['id'])->fetchColumn();
     if ($users > 0 || $parts > 0) {
         $reasons = [];
         if ($users > 0) $reasons[] = $users . ' usuario(s) asignado(s)';
-        if ($parts > 0) $reasons[] = $parts . ' repuesto(s) activo(s)';
+        if ($parts > 0) $reasons[] = $parts . ' repuesto(s), incluidos registros eliminados. Puede desactivar el barco';
         $_SESSION['flash_error'] = 'No se puede eliminar: ' . implode(' y ', $reasons) . '.';
         redirect('/boats');
     }
-    db()->prepare("UPDATE boats SET deleted_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), is_active=0 WHERE id=:id")->execute([':id' => $b['id']]);
+    db()->prepare('DELETE FROM boats WHERE id=:id')->execute([':id' => $b['id']]);
     audit_log('boat.delete', 'boat', (int)$b['id'], (int)$b['id'], ['name'=>$b['name'],'registration'=>$b['registration']]);
     $_SESSION['flash_success'] = 'Barco eliminado.';
     redirect('/boats');
@@ -94,7 +94,7 @@ echo 'No encontrado';
 
 
 function _load_boat(int $id): ?array {
-    $s = db()->prepare('SELECT * FROM boats WHERE id=:id AND deleted_at IS NULL');
+    $s = db()->prepare('SELECT * FROM boats WHERE id=:id');
     $s->execute([':id' => $id]);
     $r = $s->fetch();
     return $r ?: null;
