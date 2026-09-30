@@ -38,7 +38,7 @@ export interface LocalStore {
   getBoats(): Promise<Boat[]>;
   getUsers(): Promise<User[]>;
   getCategories(): Promise<Category[]>;
-  searchParts(opts: { query?: string; categoryId?: number | null }): Promise<LocalPart[]>;
+  searchParts(opts: { query?: string; categoryId?: number | null; boatId?: number | null }): Promise<LocalPart[]>;
   getPart(rowUid: string): Promise<LocalPart | null>;
   getCounts(): Promise<{ boats: number; categories: number; parts: number }>;
 
