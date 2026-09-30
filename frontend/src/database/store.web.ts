@@ -600,8 +600,13 @@ class WebStore implements LocalStore {
     // A newer operation may already be queued for the same row. Advance its
     // optimistic concurrency base to the server version just written.
     for (const e of remaining) {
-      if (e.row_uid === q.find((x) => x.queue_id === queueId)?.row_uid && e.action === "update" && e.entity_id === serverId) {
+      if (
+        e.row_uid === q.find((x) => x.queue_id === queueId)?.row_uid
+        && (e.action === "update" || e.action === "delete")
+        && e.entity_id === serverId
+      ) {
         e.base_updated_at = updatedAt;
+        if (e.action === "delete") e.payload = JSON.stringify({ id: serverId });
       }
     }
     await writeJson(K.parts, parts);
