@@ -539,15 +539,20 @@ class WebStore implements LocalStore {
       part_server_id: idx >= 0 ? parts[idx].server_id : null,
     });
 
-    const hasDeferredUpdate = queueBefore.some(
-      (e) => e.queue_id !== queueId && e.row_uid === rowUid && e.action === "update",
+    const hasDeferredOperation = queueBefore.some(
+      (e) => e.queue_id !== queueId
+        && e.row_uid === rowUid
+        && (e.action === "update" || e.action === "delete"),
     );
     if (idx >= 0) {
       parts[idx] = {
         ...parts[idx],
         server_id: serverId,
         updated_at: updatedAt,
-        sync_state: hasDeferredUpdate ? "pending" : "synced",
+        sync_state: hasDeferredOperation ? "pending" : "synced",
+        pending_delete: hasDeferredOperation && queueBefore.some(
+          (e) => e.queue_id !== queueId && e.row_uid === rowUid && e.action === "delete"
+        ) ? 1 : parts[idx].pending_delete,
       };
     }
     await writeJson(K.parts, parts);
