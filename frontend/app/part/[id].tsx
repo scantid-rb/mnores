@@ -15,7 +15,7 @@ import { useCategories, usePart } from "@/src/hooks/useInventory";
 import { useDeletePart, useUpdatePart } from "@/src/hooks/usePartMutations";
 import { useSession } from "@/src/state/SessionContext";
 import { localStore } from "@/src/database/store";
-import { pickPartPhoto, remotePartPhotoUrl } from "@/src/services/photos/photoService";
+import { pickPartPhoto, remotePartPhotoUrl, resolveLocalPhotoUri } from "@/src/services/photos/photoService";
 import { useSync } from "@/src/state/SyncContext";
 import { makeStyles, useTheme } from "@/src/theme";
 import { SyncState } from "@/src/types";
@@ -49,8 +49,30 @@ export default function PartDetailScreen() {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [photoViewerOpen, setPhotoViewerOpen] = useState(false);
+  const [localPhotoUri, setLocalPhotoUri] = useState<string | null>(null);
   const photoScale = useSharedValue(1);
   const savedPhotoScale = useSharedValue(1);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    if (part?.local_photo_path) {
+      void resolveLocalPhotoUri(part.local_photo_path).then((uri) => {
+        if (!active) {
+          if (uri && Platform.OS === "web") URL.revokeObjectURL(uri);
+          return;
+        }
+        objectUrl = uri;
+        setLocalPhotoUri(uri);
+      });
+    } else {
+      setLocalPhotoUri(null);
+    }
+    return () => {
+      active = false;
+      if (objectUrl && Platform.OS === "web") URL.revokeObjectURL(objectUrl);
+    };
+  }, [part?.local_photo_path]);
 
   const pinchGesture = Gesture.Pinch()
     .onUpdate((event) => {
@@ -176,8 +198,8 @@ export default function PartDetailScreen() {
                 >
                   <Image
                     source={
-                      part.local_photo_path
-                        ? { uri: part.local_photo_path }
+                      localPhotoUri
+                        ? { uri: localPhotoUri }
                         : token && part.server_id
                           ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
                           : undefined
@@ -225,8 +247,8 @@ export default function PartDetailScreen() {
                     <Animated.View style={[styles.photoViewerGestureArea, photoZoomStyle]}>
                       <Image
                         source={
-                          part.local_photo_path
-                            ? { uri: part.local_photo_path }
+                          localPhotoUri
+                            ? { uri: localPhotoUri }
                             : token && part.server_id
                               ? { uri: remotePartPhotoUrl(part.server_id), headers: { Authorization: `Bearer ${token}` } }
                               : undefined
