@@ -5,7 +5,7 @@ import { Redirect, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from "react-native";
 import { SymbolView } from "expo-symbols";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { KeyboardAwareScrollViewCompatCompat } from "@/src/components/KeyboardAwareScrollViewCompatCompat";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusBadge } from "@/src/components/StatusBadge";
@@ -61,7 +61,7 @@ export default function LoginScreen() {
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollViewCompat bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Image source={require("@/assets/images/app-image.png")} style={styles.appImage} resizeMode="contain" />
           <Text style={styles.brand}>ShipInventory</Text>
@@ -102,7 +102,7 @@ export default function LoginScreen() {
         )}
 
         <Text style={styles.version}>App {APP_VERSION}  ·  API {API_VERSION}</Text>
-      </KeyboardAwareScrollView>
+      </KeyboardAwareScrollViewCompat>
     </View>
   );
 }
