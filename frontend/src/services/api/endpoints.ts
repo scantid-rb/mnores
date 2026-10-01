@@ -4,7 +4,7 @@
 import { apiRequest, apiRequestAtBaseUrl } from "@/src/services/api/client";
 import { APP_VERSION, API_VERSION } from "@/src/config";
 import { normalizeServerUrl } from "@/src/services/serverConfig";
-import { PushChange, PushResponse, SessionUser, SyncResponse } from "@/src/types";
+import { AccountUser, PushChange, PushResponse, SessionUser, SyncResponse } from "@/src/types";
 
 
 export interface ServerSettings {
@@ -76,6 +76,7 @@ export async function apiGetStatus(token: string): Promise<ServerStatus> {
 
 interface LoginResponse { ok: boolean; token: string; user: SessionUser; }
 interface MeResponse { ok: boolean; user: SessionUser; }
+interface AccountResponse { ok: boolean; user: AccountUser; }
 
 export interface HandshakeResponse {
   ok: boolean;
@@ -102,6 +103,34 @@ export async function apiLogin(username: string, password: string): Promise<{ to
 export async function apiGetMe(token: string): Promise<SessionUser> {
   const r = await apiRequest<MeResponse>("/api/me", { token });
   return r.user;
+}
+
+export async function apiGetAccount(token: string): Promise<AccountUser> {
+  const r = await apiRequest<AccountResponse>("/api/account", { token });
+  return r.user;
+}
+
+export async function apiUpdateAccountProfile(
+  token: string,
+  input: { username: string; first_name: string; last_name: string },
+): Promise<AccountUser> {
+  const r = await apiRequest<AccountResponse>("/api/account", {
+    method: "POST",
+    token,
+    body: { action: "update_profile", ...input },
+  });
+  return r.user;
+}
+
+export async function apiChangeOwnPassword(
+  token: string,
+  input: { current_password: string; password: string; password2: string },
+): Promise<void> {
+  await apiRequest<{ ok: boolean }>("/api/account", {
+    method: "POST",
+    token,
+    body: { action: "change_password", ...input },
+  });
 }
 
 export async function apiGetSync(token: string, since?: string | null): Promise<SyncResponse> {
