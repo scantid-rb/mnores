@@ -6,7 +6,7 @@ import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { LogBox } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { KeyboardProvider } from "react-native-keyboard-controller";
+import { KeyboardProviderCompat } from "@/src/components/KeyboardProviderCompat";
 
 import { ErrorBoundary } from "@/src/components/error-boundary";
 import { queryClient } from "@/src/query-client";
@@ -26,14 +26,14 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
-          <KeyboardProvider>
+          <KeyboardProviderCompat>
             <SessionProvider>
               <SyncProvider>
                 <StatusBar style="auto" />
                 <Stack screenOptions={{ headerShown: false }} />
               </SyncProvider>
             </SessionProvider>
-          </KeyboardProvider>
+          </KeyboardProviderCompat>
         </SafeAreaProvider>
         </QueryClientProvider>
       </ErrorBoundary>
