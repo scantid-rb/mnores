@@ -5,7 +5,7 @@ import { Redirect, useRouter } from "expo-router";
 import { useState } from "react";
 import { ActivityIndicator, Image, Pressable, Text, TextInput, View } from "react-native";
 import { SymbolView } from "expo-symbols";
-import { KeyboardAwareScrollViewCompatCompat } from "@/src/components/KeyboardAwareScrollViewCompatCompat";
+import { KeyboardAwareScrollViewCompat } from "@/src/components/KeyboardAwareScrollViewCompat";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusBadge } from "@/src/components/StatusBadge";
