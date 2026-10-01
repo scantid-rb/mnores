@@ -105,8 +105,8 @@ Los cambios se aplican inmediatamente en la siguiente petición.
 
 ## API para la app Android (offline)
 
-**Contrato:** API 1.4.4  
-**Servidor:** APP_VERSION 1.4.4  
+**Contrato:** API 1.4.5  
+**Servidor:** APP_VERSION 1.4.5  
 **Esquema:** SCHEMA_VERSION 3  
 **Contrato completo:** `api_contract_android.md`
 
@@ -130,11 +130,11 @@ El servidor expone una API REST destinada al cliente Android offline-first. El c
 
 El servidor mantiene tres versiones independientes:
 
-- **APP_VERSION 1.4.4:** versión del servidor.
-- **API_VERSION 1.4.4:** contrato que debe soportar el cliente.
+- **APP_VERSION 1.4.5:** versión del servidor.
+- **API_VERSION 1.4.5:** contrato que debe soportar el cliente.
 - **SCHEMA_VERSION 3:** versión del esquema SQLite.
 
-La aplicación Android candidata actual utiliza **APP_VERSION 0.1.2** y **API_VERSION 1.4.4**. La versión Android no forma parte del versionado del servidor.
+La aplicación Android candidata actual utiliza **APP_VERSION 0.1.4** y **API_VERSION 1.4.5**. La versión Android no forma parte del versionado del servidor.
 
 ### Sincronización
 
@@ -317,7 +317,11 @@ Menú *Backups → Restaurar* (solo Administrador). El proceso:
 
 ## Licencia y créditos
 
-Aplicación desarrollada como proyecto interno para gestión de repuestos de barcos. Dependencia externa: [PhpSpreadsheet](https://phpspreadsheet.readthedocs.io/) (MIT).
+ShipInventory es software libre distribuido bajo la **MIT License**.
+
+Copyright © 2026 José Isidro González.
+
+El texto completo de la licencia está disponible en [LICENSE](LICENSE). Las bibliotecas y dependencias de terceros conservan sus propias licencias. Entre ellas, PhpSpreadsheet se distribuye bajo licencia MIT.
 
 
 ## Despliegue automático
