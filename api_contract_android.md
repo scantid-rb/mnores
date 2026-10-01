@@ -1,10 +1,10 @@
 # Contrato API — Inventario de Repuestos
 
-**API_VERSION:** 1.4.4  
-**APP_VERSION del servidor:** 1.4.4  
+**API_VERSION:** 1.4.5  
+**APP_VERSION del servidor:** 1.4.5  
 **SCHEMA_VERSION:** 3  
 **Estado:** contrato de referencia para el cliente Android offline-first  
-**Última revisión:** 2026-09-28
+**Última revisión:** 2026-09-30
 
 Este documento define el contrato HTTP actualmente implementado por el servidor. La aplicación Android debe depender de este documento y no de detalles internos de PHP o SQLite.
 
@@ -57,8 +57,8 @@ Respuesta 200:
   "ok": true,
   "app_name": "Inventario de Repuestos",
   "app_title": "Repuestos a bordo",
-  "app_version": "1.4.4",
-  "api_version": "1.4.4",
+  "app_version": "1.4.5",
+  "api_version": "1.4.5",
   "installed": true
 }
 ```
@@ -137,7 +137,7 @@ Respuesta:
 
 #### Boats
 
-Los barcos se entregan como **snapshot completo en cada llamada**, incluso con `since`. Esto es intencionado porque su borrado es físico y no existe un tombstone persistente.
+Los barcos se entregan como **snapshot completo en cada llamada**, incluso con `since`. Desde API 1.4.5 el borrado es lógico: las filas eliminadas conservan `deleted_at` como tombstones para preservar referencias históricas. `GET /api/boats` devuelve únicamente barcos activos/no eliminados, mientras `/api/sync` puede incluir tombstones.
 
 Campos:
 ```json
@@ -357,7 +357,7 @@ Acciones:
 - `create`: `name`, `registration`, `is_active`.
 - `update`: `id`, `name`, `registration`, `is_active`.
 - `toggle`: `id`.
-- `delete`: solo `admin`; se rechaza si existen usuarios o piezas activas asociadas.
+- `delete`: solo `admin`; se rechaza si existen usuarios o piezas activas asociadas. En API 1.4.5 el borrado permitido es lógico (`deleted_at` + `is_active=0`) para conservar referencias históricas.
 
 Errores principales: `403`, `404`, `409`, `422`, `405`.
 
@@ -454,8 +454,8 @@ Respuesta 200:
 ```json
 {
   "ok": true,
-  "app_version": "1.4.4",
-  "api_version": "1.4.4",
+  "app_version": "1.4.5",
+  "api_version": "1.4.5",
   "schema_version": 3,
   "sqlite_integrity": "ok",
   "database_size_bytes": 123456,
@@ -669,7 +669,7 @@ La versión Android (`APP_VERSION`) es independiente de `API_VERSION`.
 | GET | `/api/backups/{name}/download` | Sí | Descargar backup |
 | POST | `/api/backups/restore-upload` | Sí | Restaurar ZIP local (admin) |
 
-**Fin del contrato API 1.4.4.**
+**Fin del contrato API 1.4.5.**
 
 
 ## Validación y sincronización en la rama pwa
