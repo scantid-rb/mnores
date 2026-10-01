@@ -22,22 +22,21 @@ class Element {
   click() { this.events.click?.(); this.clicked = true; }
 }
 const document = { body: new Element('body'), createElement: tag => new Element(tag) };
-const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };
 async function main() {
-  const { Alert } = load('utils/alert.web.ts', {}, { document });
-  let accepted = 0, cancelled = 0;
-  Alert.alert('Delete', 'Confirm?', [{ text: 'Cancel', style: 'cancel', onPress: () => cancelled++ }, { text: 'Delete', style: 'destructive', onPress: () => accepted++ }]);
-  let dialog = document.body.children.at(-1);
-  const confirm = dialog.children.at(-1).children[1]; confirm.click(); confirm.click(); await flush();
-  assert.equal(accepted, 1); assert.equal(cancelled, 0); assert(dialog.removed);
-  Alert.alert('Delete', 'Confirm?', [{ text: 'Cancel', style: 'cancel', onPress: () => cancelled++ }, { text: 'Delete', onPress: () => accepted++ }]);
-  dialog = document.body.children.at(-1); dialog.events.cancel({ preventDefault() {} }); await flush();
-  assert.equal(cancelled, 1); assert.equal(accepted, 1);
-  console.log('PASS web confirmation invokes selected action once and Escape cancels');
-  Alert.alert('Fail', '', [{ onPress() { throw Error('fixture error'); } }]);
-  document.body.children.at(-1).children.at(-1).children[0].click(); await flush();
-  assert.match(document.body.children.at(-1).children[1].textContent, /fixture error/);
-  console.log('PASS synchronous confirmation callback errors remain visible');
+  let confirmation = true, accepted = 0, cancelled = 0, notice;
+  const window = { alert: text => { notice = text; }, confirm: () => confirmation };
+  const { Alert } = load('utils/alert.web.ts', {}, { window });
+  const buttons = [{ text: 'Cancel', style: 'cancel', onPress: () => cancelled++ }, { text: 'Delete', style: 'destructive', onPress: () => accepted++ }];
+  Alert.alert('Delete', 'Confirm?', buttons);
+  assert.equal(accepted, 1); assert.equal(cancelled, 0);
+  confirmation = false;
+  Alert.alert('Delete', 'Confirm?', buttons);
+  assert.equal(accepted, 1); assert.equal(cancelled, 1);
+  Alert.alert('Profile', 'Updated');
+  assert.equal(notice, 'Profile\n\nUpdated');
+  Alert.alert('Notice', '', [{ text: 'Cancel', style: 'cancel' }]);
+  assert.equal(notice, 'Notice');
+  console.log('PASS browser Alert confirms, cancels and displays informational notices');
   class ApiError extends Error { constructor(message, status) { super(message); this.status = status; } }
   let status = 200, contentType = 'application/zip', restore, revoked;
   const fetch = async (url, options) => {

@@ -61,5 +61,11 @@ async function main() {
   const asset = '_expo/static/js/web/entry-hash.js'; assert.equal((await c.fetch(asset, 'cors')).body, 'fresh');
   networkFails = true; assert.equal((await c.fetch(asset, 'cors')).body, 'fresh');
   console.log('PASS hashed asset works offline after first fetch');
+  networkFails = false;
+  const root = worker('root', 'https://example.test/'); await root.lifecycle('install'); await root.lifecycle('activate');
+  networkFails = true;
+  for (const route of ['profile', 'admin/users', 'part/7']) assert((await root.fetch(route)).body.includes('root'));
+  for (const route of ['api/account', 'index.php', 'sw.js']) assert.equal(await root.fetch(route), undefined);
+  console.log('PASS root deployment opens profile/admin/part offline and excludes backend API/PHP');
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

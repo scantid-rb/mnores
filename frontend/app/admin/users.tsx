@@ -40,7 +40,7 @@ export default function UsersAdminScreen() {
   const { token, user: actor } = useSession();
   const { online } = useConnectivity();
   const { syncNow } = useSync();
-  const { data: users = [], isLoading } = useUsers();
+  const { data: cachedUsers = [], isLoading } = useUsers();
   const { data: boats = [] } = useBoats();
 
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -58,6 +58,9 @@ export default function UsersAdminScreen() {
   const allowed =
     actor?.role === "admin" || actor?.role === "inspector" || actor?.role === "chief_engineer";
   const isChief = actor?.role === "chief_engineer";
+  const users = isChief
+    ? cachedUsers.filter((u) => u.role === "mechanic" && actor?.boat_id != null && u.boat_id === actor.boat_id)
+    : cachedUsers;
   const roleOptions = useMemo(() => rolesFor(actor?.role ?? "inspector"), [actor?.role]);
   const editingUser = users.find((u) => u.id === editingId) ?? null;
   const isPrimaryAdmin = editingUser?.is_primary_admin === 1;

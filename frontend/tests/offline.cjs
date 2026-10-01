@@ -119,6 +119,16 @@ async function main() {
   await web.saveWebPhotoBlob('orphan',new Blob(['a']));await s.setLocalPhoto('discard-create','orphan');await s.discardFailed();
   return{pass:(await s.getCounts()).parts===0&&(await s.getPendingCount())===0&&(await s.getPendingPhotos()).length===0&&!(await web.hasWebPhotoBlob('orphan'))};
  });
+ await record('profile identity update preserves inventory, cursor, queues and photo blobs',async()=>{
+  await seed();await s.saveSession({id:1,username:'before',role:'chief_engineer',boat_id:1});await s.setLastSyncAt('cursor-before');
+  await s.updatePartLocal('srv-1',{quantity:13});await web.saveWebPhotoBlob('identity-photo',new Blob(['photo']));await s.setLocalPhoto('srv-1','identity-photo');
+  const before=JSON.stringify({parts:await s.searchParts({}),changes:await s.getPendingChanges(),photos:await s.getPendingPhotos()});
+  await s.updateSessionIdentity({id:1,username:'after',role:'chief_engineer',boat_id:1});
+  const session=await s.getSession();
+  const after=JSON.stringify({parts:await s.searchParts({}),changes:await s.getPendingChanges(),photos:await s.getPendingPhotos()});
+  await s.updateSessionIdentity({id:99,username:'other',role:'admin',boat_id:null});
+  return{pass:session.username==='after'&&session.last_sync_at==='cursor-before'&&before===after&&await web.hasWebPhotoBlob('identity-photo')&&(await s.getSession()).id===1};
+ });
  if (findings.some((result) => !result.pass)) process.exitCode = 1;
  for (const result of findings) console.log(`${result.pass ? 'PASS' : 'FAIL'} ${result.name}`);
 }

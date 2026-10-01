@@ -66,7 +66,7 @@ export default function ProfileScreen() {
     };
   }, [online, token]);
 
-  const effectiveUser = account ?? (user ? {
+  const effectiveUser = useMemo(() => account ?? (user ? {
     id: user.id,
     username: user.username,
     first_name: user.first_name ?? "",
@@ -74,7 +74,7 @@ export default function ProfileScreen() {
     role: user.role,
     boat_id: user.boat_id,
     is_active: 1,
-  } : null);
+  } : null), [account, user]);
 
   const boatName = useMemo(() => {
     if (!effectiveUser) return "—";

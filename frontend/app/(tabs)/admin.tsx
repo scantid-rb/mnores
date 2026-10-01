@@ -1,5 +1,5 @@
 import { Text, View, ScrollView, Pressable } from "react-native";
-import { useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StatusBadge } from "@/src/components/StatusBadge";
@@ -46,6 +46,10 @@ export default function AdministrationScreen() {
   const { online } = useConnectivity();
   const isChief = user?.role === "chief_engineer";
   const modules = isChief ? MODULES.filter((module) => module.title === "Usuarios") : MODULES;
+
+  if (!user || !["admin", "inspector", "chief_engineer"].includes(user.role)) {
+    return <Redirect href="/inventory" />;
+  }
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
