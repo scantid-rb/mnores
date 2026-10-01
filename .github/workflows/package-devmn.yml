@@ -1,0 +1,27 @@
+name: Package devmn deployment
+
+on:
+  push:
+    branches:
+      - pwa
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout pwa
+        uses: actions/checkout@v4
+      - name: Create deployment zip
+        run: |
+          zip -r ShipInventory-devmn-pwa.zip . \
+            -x '.git/*' \
+               '.github/workflows/package-devmn.yml' \
+               'data/*' \
+               'frontend/*' \
+               'deploy.php'
+      - name: Upload deployment zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShipInventory-devmn-pwa
+          path: ShipInventory-devmn-pwa.zip
+          if-no-files-found: error
