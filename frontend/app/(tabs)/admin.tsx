@@ -44,6 +44,8 @@ export default function AdministrationScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useSession();
   const { online } = useConnectivity();
+  const isChief = user?.role === "chief_engineer";
+  const modules = isChief ? MODULES.filter((module) => module.title === "Usuarios") : MODULES;
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -51,7 +53,7 @@ export default function AdministrationScreen() {
         <View>
           <Text style={styles.title}>Administración</Text>
           <Text style={styles.subtitle}>
-            {user?.role === "admin" ? "Administrador" : "Inspector"}
+            {user?.role === "admin" ? "Administrador" : user?.role === "inspector" ? "Inspector" : "Jefe de Máquinas"}
           </Text>
         </View>
         <StatusBadge online={online} syncing={false} />
@@ -59,14 +61,15 @@ export default function AdministrationScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.notice}>
-          <Text style={styles.noticeTitle}>Área administrativa</Text>
+          <Text style={styles.noticeTitle}>{isChief ? "Gestión de mecánicos" : "Área administrativa"}</Text>
           <Text style={styles.noticeText}>
-            Los datos administrativos se mantienen disponibles en caché para consulta
-            sin conexión. Las modificaciones requieren conexión a Internet.
+            {isChief
+              ? "Puedes crear, editar, activar, desactivar y eliminar únicamente mecánicos de tu barco asignado."
+              : "Los datos administrativos se mantienen disponibles en caché para consulta sin conexión. Las modificaciones requieren conexión a Internet."}
           </Text>
         </View>
 
-        {MODULES.map((module) => {
+        {modules.map((module) => {
           const enabled = true;
           return (
             <Pressable
