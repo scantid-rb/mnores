@@ -85,6 +85,7 @@ $activeIn = function(array $paths) use ($__path) {
             <?php endif; ?>
 
             <a href="<?= e(url('/account')) ?>" class="nav-link<?= $__path==='/account'?' active':'' ?>" data-testid="nav-account">Mi cuenta</a>
+            <a href="<?= e(url('/about')) ?>" class="nav-link<?= $__path==='/about'?' active':'' ?>" data-testid="nav-about">Acerca de</a>
 
             <form method="post" action="<?= e(url('/logout')) ?>" class="inline nav-logout">
                 <?= csrf_field() ?>
