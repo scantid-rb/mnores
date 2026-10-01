@@ -113,6 +113,61 @@ Respuesta 200:
 }
 ```
 
+### 3.2.1 GET /api/account
+
+**Auth:** sí. Disponible para todos los roles.
+
+Devuelve los datos editables y de contexto del usuario autenticado:
+
+```json
+{
+  "ok": true,
+  "user": {
+    "id": 2,
+    "username": "Isidro",
+    "first_name": "Isidro",
+    "last_name": "Gonzalez",
+    "role": "chief_engineer",
+    "boat_id": 1,
+    "is_active": 1
+  }
+}
+```
+
+### 3.2.2 POST /api/account
+
+**Auth:** sí. **Content-Type:** `application/json`. Disponible para todos los roles.
+
+El usuario solo puede modificar su propia cuenta; el servidor obtiene la identidad del Bearer token. No se aceptan `id`, `role`, `boat_id`, `is_active` ni `is_primary_admin` como campos modificables.
+
+Acción `update_profile`:
+
+```json
+{
+  "action": "update_profile",
+  "username": "isidro",
+  "first_name": "Isidro",
+  "last_name": "Gonzalez"
+}
+```
+
+Validaciones: usuario de 1–40 caracteres limitado a letras, números, punto, guion y guion bajo; nombre obligatorio hasta 80 caracteres; apellidos obligatorios hasta 120; nombre de usuario único.
+
+Acción `change_password`:
+
+```json
+{
+  "action": "change_password",
+  "current_password": "actual",
+  "password": "nueva1234",
+  "password2": "nueva1234"
+}
+```
+
+La contraseña actual debe ser correcta, la nueva debe tener al menos 8 caracteres y ambas copias deben coincidir. Los cambios de perfil y contraseña generan auditoría.
+
+Errores principales: `400` JSON/acción inválida, `401` no autenticado, `422` validación.
+
 ### 3.3 GET /api/sync
 
 **Auth:** sí.
@@ -575,6 +630,7 @@ Errores principales: `400`, `401`, `403`, `422`, `500`.
 | Operación | admin | inspector | chief_engineer | mechanic |
 |---|---:|---:|---:|---:|
 | Login / me / sync | ✓ | ✓ | ✓ | ✓ |
+| Editar perfil/cambiar contraseña propia | ✓ | ✓ | ✓ | ✓ |
 | Ver piezas | Todos | Todos | Su barco | Su barco |
 | Crear pieza | ✓ | ✓ | Su barco | — |
 | Editar campos | ✓ | ✓ | Su barco | — |
@@ -650,6 +706,8 @@ La versión Android (`APP_VERSION`) es independiente de `API_VERSION`.
 |---|---|---|---|
 | POST | `/api/login` | No | Token |
 | GET | `/api/me` | Sí | Identidad |
+| GET | `/api/account` | Sí | Perfil propio |
+| POST | `/api/account` | Sí | Editar perfil/cambiar contraseña propia |
 | GET | `/api/sync` | Sí | Sincronización |
 | POST | `/api/parts/push` | Sí | Cambios offline |
 | GET | `/api/photos/{id}` | Sí | Descargar foto |
