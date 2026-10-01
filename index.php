@@ -73,6 +73,9 @@ if (str_starts_with($path, '/api/')) {
         case '/api/me':
             if ($method === 'GET') { require __DIR__ . '/src/actions/api_me.php'; return; }
             break;
+        case '/api/account':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_account.php'; return; }
+            break;
         case '/api/sync':
             if ($method === 'GET') { require __DIR__ . '/src/actions/api_sync.php'; return; }
             break;
