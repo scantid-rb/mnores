@@ -1,12 +1,24 @@
-// Domain types mirroring the MNores PHP API 1.4.3 contract + local-only types.
+// Domain types mirroring the MNores PHP API 1.4.5 contract + local-only types.
 
 export type Role = "admin" | "inspector" | "chief_engineer" | "mechanic";
 
 export interface SessionUser {
   id: number;
   username: string;
+  first_name?: string;
+  last_name?: string;
   role: Role;
   boat_id: number | null;
+}
+
+export interface AccountUser {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  role: Role;
+  boat_id: number | null;
+  is_active: number;
 }
 
 export interface User {
