@@ -1,3 +1,9 @@
-# Bloquear el acceso HTTP directo al código fuente de la aplicación.
-Order allow,deny
-Deny from all
+# Bloquear todo acceso HTTP directo a dependencias PHP.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>
