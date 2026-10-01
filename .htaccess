@@ -1,20 +1,31 @@
 RewriteEngine On
 
-# Asegurar que la cabecera "Authorization" (usada por la API para el
-# carnet de acceso del móvil) llegue a PHP. En algunos hostings
-# compartidos, PHP la oculta por defecto si no se hace esto.
+# Asegurar que la cabecera Authorization usada por la API llegue a PHP.
 RewriteCond %{HTTP:Authorization} .
 RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-# Si el archivo o carpeta solicitado existe físicamente (assets, imágenes, etc.),
-# se sirve tal cual y no se reescribe.
+# Bloquear archivos internos/documentacion que no deben servirse directamente.
+<FilesMatch "^(composer\.(json|lock)|README(?:_DEPLOY)?\.md|CHANGELOG\.md|changelog\.md|api_contract_android\.md|LICENSE|manifest\.json)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Bloquear dotfiles y dotdirs, excepto /.well-known/ (ACME/certificados).
+RewriteRule (^|/)\.(?!well-known(?:/|$)) - [F,L]
+
+# Rutas internas de la PWA: si no existe un archivo/directorio fisico,
+# cargar el index de la PWA para que resuelva el router del cliente.
 RewriteCond %{DOCUMENT_ROOT}/pwa/index.html -f
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^pwa/.*$ pwa/index.html [L]
 
+# Todo lo demas que no sea archivo o directorio real pasa al front controller.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
-
-# Todo lo demás pasa por el front controller de la aplicación.
 RewriteRule ^ index.php [L]
