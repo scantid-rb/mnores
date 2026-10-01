@@ -18,5 +18,6 @@
         <?php endif; ?>
         <a class="home-link" href="<?= e(url('/categories')) ?>" data-testid="home-link-categories"><strong>Categorías</strong><em>Clasificación de repuestos</em></a>
         <a class="home-link" href="<?= e(url('/account')) ?>" data-testid="home-link-account"><strong>Mi cuenta</strong><em>Perfil y contraseña</em></a>
+        <a class="home-link" href="<?= e(url('/about')) ?>" data-testid="home-link-about"><strong>Acerca de</strong><em>Versión, información y licencia</em></a>
     </div>
 </section>
