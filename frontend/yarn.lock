@@ -3151,7 +3151,7 @@ expo-constants@~57.0.19:
   dependencies:
     "@expo/env" "~2.4.3"
 
-expo-constants@~57.0.20:
+expo-constants@57.0.20, expo-constants@~57.0.20:
   version "57.0.20"
   resolved "https://registry.yarnpkg.com/expo-constants/-/expo-constants-57.0.20.tgz#d8691eccf44282f230a60b5f415b2d94cf7b9be0"
   integrity sha512-WycPVvBgbluSa6yAh6DKnX646ZHrae0gV2ZLum5fioNkR+DiWyulq1+UfS++Jc6yfAh/l55NOirv6mt5cnQhSw==

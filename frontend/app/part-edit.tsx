@@ -9,7 +9,7 @@
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
-import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { KeyboardAwareScrollViewCompat } from "@/src/components/KeyboardAwareScrollViewCompat";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useBoats, useCategories, usePart } from "@/src/hooks/useInventory";
@@ -133,7 +133,7 @@ export default function PartEditScreen() {
         </Pressable>
       </View>
 
-      <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollViewCompat bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Field label="Barco">
           {fullEdit && !isEdit ? (
             <View style={styles.chipsRow}>
@@ -227,7 +227,7 @@ export default function PartEditScreen() {
         <Pressable style={styles.saveBtn} onPress={onSave} testID="edit-save-primary">
           <Text style={styles.saveBtnText}>{isEdit ? "Guardar cambios" : "Crear repuesto"}</Text>
         </Pressable>
-      </KeyboardAwareScrollView>
+      </KeyboardAwareScrollViewCompat>
     </View>
   );
 }
