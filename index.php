@@ -140,6 +140,9 @@ switch ($path) {
     case '/account':
         require __DIR__ . '/src/actions/account.php';
         return;
+    case '/about':
+        if ($method === 'GET') { require __DIR__ . '/src/actions/about.php'; return; }
+        break;
 }
 
 // Rutas de recursos con posibles subrutas.
