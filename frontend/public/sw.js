@@ -32,7 +32,7 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET" || url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) return;
   const relative = url.pathname.slice(base.pathname.length);
   if (relative.startsWith("api/") || relative === "sw.js") return;
-  const navigation = request.mode === "navigate" && /^(?:$|index\.html$|(?:inventory|login|sync|profile|part-edit|backups|server-settings|system-status)\/?$|(?:part|admin)(?:\/|$))/.test(relative);
+  const navigation = request.mode === "navigate" && /^(?:$|index\.html$|(?:inventory|login|sync|profile|about|part-edit|backups|server-settings|system-status)\/?$|(?:part|admin)(?:\/|$))/.test(relative);
   const asset = relative.startsWith("_expo/") || relative.startsWith("assets/");
   const metadata = relative === "manifest.json" || relative === "icon.svg";
   if (!navigation && !asset && !metadata) return;

@@ -1,66 +1,60 @@
-# Validación de producción PWA: perfil y permisos
+# Build PWA con Acerca de
 
-Fuente actualizada desde GitHub: `7c332e0999b3c733a1e2576cc85f851b49aedfad`, rama `pwa`.
-No se modifican otras ramas ni se despliega en AwardSpace.
+Fuente actualizada desde GitHub: `0a9530fb0b67e414e0c17f7b086657ac603ee8d4`,
+exclusivamente `scantid-rb/mnores:pwa`.
 
-## Correcciones adicionales
+## Cambios
 
-- `app/(tabs)/admin.tsx`: redirige a Inventario al Mecánico y usuarios sin rol
-  administrativo, también ante acceso por URL directa.
-- `app/admin/users.tsx`: filtra la caché del Jefe a mecánicos de su propio
-  `boat_id`; sin barco asignado la lista está vacía. Los payloads ya forzaban
-  mecánico/barco propio. Admin e Inspector conservan sus opciones y Barcos
-  continúa limitado a ambos.
-- `app/(tabs)/profile.tsx`: estabiliza `effectiveUser` con `useMemo` para corregir
-  la advertencia de dependencias de hooks, sin cambiar el flujo del perfil.
-- `tests/web.cjs`: actualiza la simulación al wrapper actual `window.alert/confirm`.
-- `tests/offline.cjs`: verifica que `updateSessionIdentity` cambia username y
-  conserva exactamente inventario, cursor, colas y blobs de fotografías.
-- `tests/sw.cjs`: verifica rutas offline de perfil/usuarios/repuesto en ámbito
-  raíz y exclusión del backend API/PHP.
+- Se recompila el frontend actual con `PWA_BASE_PATH=/pwa` y
+  `EXPO_PUBLIC_API_BASE_URL=https://devmn.atwebpages.com`.
+- `public/sw.js` incluye `about` entre las rutas de navegación offline.
+  `tests/sw.cjs` comprueba `/pwa/about` y la ruta equivalente en ámbito raíz.
+- Se actualiza el build publicable en `pwa/`. No se cambia el backend, data,
+  API, permisos, versiones ni la pantalla Acerca de del código recibido.
+- Se excluye el bundle intermedio de Expo sin referencias en HTML/precache.
 
-No se modifica IndexedDB, SessionContext, conectividad, sincronización, CRUD,
-fotos, Alert ni versiones. No se añade acceso a Categorías.
+## Comprobaciones
 
-## Resultados
-
-| Comprobación | Resultado |
+| Validación | Resultado |
 | --- | --- |
-| `corepack yarn check --verify-tree` | Correcto: Folder in sync |
-| Yarn install congelado/offline | Caché incompleta: falta expo-constants 57.0.20 |
-| Yarn install congelado por red, con/sin proxy explícito | Descarga no completada; cancelada al permanecer en Fetching packages. Sin cambios de lockfile/versiones |
-| `corepack yarn typecheck` | Correcto |
-| `corepack yarn lint` | Correcto, sin advertencias |
-| `corepack yarn test` | Correcto: conectividad 4, offline 23, SW 6, web 2, React Query/sync 3 |
-| `corepack yarn expo-doctor` | 20/20 comprobaciones correctas |
-| `corepack yarn expo install --check` | Timeout del proxy en comprobación online |
-| `EXPO_OFFLINE=1 corepack yarn expo install --check` | Dependencias actualizadas según metadatos locales; Expo advierte de menor fiabilidad offline |
-| `corepack yarn test:api` | 14 correctos; falla P09 (espera 409; API actual devuelve 200 con borrado lógico de barco) |
-| `PWA_BASE_PATH= corepack yarn build:pwa` | Correcto, raíz pública `/` |
-| HTTP local | 26 recursos de precache servidos idénticos al archivo generado |
+| `yarn install --frozen-lockfile --ignore-scripts` | No completa Fetching packages en 45 segundos; timeout. No se cambia yarn.lock |
+| `yarn check --verify-tree` | Folder in sync: dependencias instaladas verificadas |
+| `yarn typecheck` | Correcto |
+| `yarn lint` | Correcto, sin advertencias |
+| `yarn test` | 39 escenarios correctos: conectividad 4, IndexedDB/offline 23, SW 7, web 2, React Query/sync 3 |
+| `PWA_BASE_PATH=/pwa yarn build:pwa` | Correcto, export de producción |
+| HTTP local con router PHP del proyecto | 26 recursos del precache idénticos a los archivos; login/inventario/about/perfil/admin-users devuelven index.html |
+| Bundle ejecutado en JSDOM con IndexedDB simulado | Login arranca desde /pwa/ y redirige a /pwa/login sin errores de render |
+| Acerca de en el bundle ejecutado | Se muestra offline para Admin, Inspector, Jefe y Mecánico |
+| Handshake en la pantalla compilada | Al reconectar muestra versión de servidor de una respuesta simulada y envía client_app_version=0.1.1/client_api_version=1.4.5 |
+| Registro SW ejecutado | /pwa/sw.js y scope /pwa/ |
 
-P09 es un fallo previo y ajeno a perfil/permisos; no se altera el backend ni se
-cambia su expectativa para ocultarlo. La suite adicional API no está en verde.
-Las dependencias existentes se verifican con Yarn y todas las validaciones PWA
-pasan; no se afirma una instalación limpia completada desde cero.
+La prueba DOM usa el bundle real, JSDOM y fake-indexeddb con datos desechables;
+no inicia sesión ni hace peticiones a AwardSpace. No sustituye la prueba en
+Safari/Chrome reales de instalación, fotos y actualización del SW.
 
-## Paquete
+## Contenido y rutas
 
-Build en `pwa/`: 27 archivos, 3.951.102 bytes sin comprimir. El ZIP incluye
-su contenido directamente, sin carpeta envolvente. Primer nivel:
-`_expo/`, `assets/`, `favicon.ico`, `icon.svg`, `index.html`, `manifest.json`,
-`metadata.json`, `sw.js`. Sin node_modules, .git, TS/TSX, mapas, logs ni cachés.
-Se excluye el bundle intermedio de Expo sin referencias en HTML/precache.
-Manifest con inicio/ámbito `./`; registro `/sw.js`, ámbito `/`; HTML referencia
-`/manifest.json` y `/_expo/...`. App 0.1.1/API 1.4.5 y handshake alineado;
-ningún 1.4.4 en el bundle; compatibilidad exacta por igualdad con API_VERSION.
+27 archivos, 3.955.403 bytes. HTML, manifest, SW, metadata, favicon/icon,
+_expo y assets directamente en pwa/. ZIP sin carpeta envolvente, sin fuentes,
+node_modules, backend, frontend, data, PHP, mapas, logs ni cachés de desarrollo.
+HTML apunta a /pwa/_expo, /pwa/manifest.json, /pwa/icon.svg y /pwa/favicon.ico.
+Manifest con inicio/ámbito relativos ./ y recursos del SW relativos a /pwa/.
 
-La API sigue siendo configurable. Se conserva el valor inicial del código
-(`https://devmn.atwebpages.com`) y las preferencias persistidas; seleccionar
-la URL de producción correspondiente en Configuración. El ZIP no reemplaza
-reglas del backend ni incluye credenciales.
+El bundle contiene la ruta/pestaña Acerca de, información de ShipInventory,
+cliente navegador/PWA instalada, App 0.1.1, API requerida 1.4.5, dirección del
+servidor, estado online/offline, versiones obtenidas del handshake, MIT y
+copyright © 2026 José Isidro González. Acerca de no restringe roles.
 
-Pendiente en navegador/hosting real: HTTPS, rutas SPA nuevas junto a `/api`
-sin interceptar PHP, instalación Chrome/Safari, actualización del SW,
-perfil/contraseña y permisos por rol, reapertura offline y sincronización de
-cambios/fotos al reconectar. No se accede ni se despliega en AwardSpace.
+No hay configuración ni URLs de recursos a Codespaces, localhost u otros
+servidores API. Expo Linking conserva un literal genérico 'localhost' en su
+parser de rutas sin hostname; no es una URL de recurso o servidor configurado.
+No se elimina código del framework. No hay API 1.4.4 en la lógica del bundle.
+
+Advertencia no bloqueante de Expo: el proceso de export termina forzando su
+salida tras escribir los archivos. El script termina con éxito y el resultado
+se verifica por contenido, HTTP y ejecución del bundle.
+
+No se despliega en AwardSpace. Subir el contenido del ZIP directamente dentro
+del directorio público /pwa/, sin crear otra carpeta pwa en su interior.
+Queda validar instalación/actualización y sincronización con el servidor real.
