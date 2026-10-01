@@ -68,7 +68,9 @@ $activeIn = function(array $paths) use ($__path) {
             </details>
             <?php endif; ?>
 
+            <?php if ($isAdminOrInsp): ?>
             <a href="<?= e(url('/boats')) ?>" class="nav-link<?= $activeIn(['/boats'])?' active':'' ?>" data-testid="nav-boats">Barcos</a>
+            <?php endif; ?>
 
             <?php if ($isAdminOrInsp): ?>
             <details class="nav-drop<?= $activeIn(['/backups','/audit','/settings','/status'])?' active':'' ?>" data-testid="nav-sistema">
