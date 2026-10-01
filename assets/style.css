@@ -343,3 +343,13 @@ textarea:focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3p
     .container { padding: 20px 16px 40px; }
     .card { padding: 24px; }
 }
+
+
+/* Acerca de */
+.about-hero { text-align: center; padding: 6px 0 10px; }
+.about-mark { color: var(--accent); font-size: 36px; line-height: 1; margin-bottom: 10px; }
+.about-hero .title { margin-bottom: 4px; }
+.about-hero .subtitle { margin-bottom: 0; }
+.about-copy { color: var(--text); margin: 8px 0 0; }
+.about-license { color: var(--text); }
+.about-license p { margin: 6px 0; }
