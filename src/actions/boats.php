@@ -1,11 +1,11 @@
 <?php
 declare(strict_types=1);
 
-$actor = require_role([ROLE_ADMIN, ROLE_INSPECTOR, ROLE_CHIEF, ROLE_MECHANIC]);
+$actor = require_role([ROLE_ADMIN, ROLE_INSPECTOR]);
 $path  = current_path();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
-// Todos ven la lista; solo admin/inspector pueden mutar (chequeado en cada acción).
+// Solo admin/inspector pueden consultar o gestionar la flota.
 if ($path === '/boats' && $method === 'GET') {
     $rows = db()->query('SELECT b.*, (SELECT COUNT(*) FROM users u WHERE u.boat_id = b.id) AS users_count FROM boats b WHERE b.deleted_at IS NULL ORDER BY b.name')->fetchAll();
     render('boats/index', ['title' => 'Barcos', 'actor' => $actor, 'rows' => $rows]);
