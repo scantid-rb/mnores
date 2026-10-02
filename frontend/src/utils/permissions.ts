@@ -2,7 +2,13 @@
 // forbidden result is still handled); this only decides which controls the
 // UI shows. Admin/inspector are read-only on mobile until explicitly enabled.
 
-import { Role } from "@/src/types";
+import { Role, SessionUser } from "@/src/types";
+
+export function canAccessBoat(user: SessionUser | null, boatId: number): boolean {
+  return user?.role === "admin" || user?.role === "inspector" ||
+    ((user?.role === "chief_engineer" || user?.role === "mechanic") &&
+      user.boat_id != null && user.boat_id === boatId);
+}
 
 export function canCreatePart(role: Role | undefined): boolean {
   return role === "chief_engineer" || role === "admin" || role === "inspector";

@@ -59,10 +59,14 @@ async function main() {
   await pending;
   onlineManager.setOnline(false);
   const repo = load('src/repositories/inventoryRepository.ts', { '@/src/database/store': { localStore: s } });
+  let actor = { id: 1, username: 'chief', role: 'chief_engineer', boat_id: 1 };
+  const permissions = load('src/utils/permissions.ts', {});
+  const session = { useSession: () => ({ mode: 'authenticated', user: actor }) };
   const hooks = load('src/hooks/usePartMutations.ts', {
     '@tanstack/react-query': { useMutation: options => options, useQueryClient: () => qc },
     '@/src/repositories/inventoryRepository': repo,
-    '@/src/state/SessionContext': { useSession: () => ({ mode: 'authenticated' }) },
+    '@/src/state/SessionContext': session,
+    '@/src/utils/permissions': permissions,
     '@/src/state/SyncContext': { useSync: () => ({ syncNow: async () => {}, refreshPending: async () => {} }) },
     '@/src/utils/id': { newLocalId: () => 'offline-new' },
   });
@@ -91,6 +95,8 @@ async function main() {
   const reads = load('src/hooks/useInventory.ts', {
     '@tanstack/react-query': { useQuery: options => options },
     '@/src/repositories/inventoryRepository': reloadRepo,
+    '@/src/state/SessionContext': session,
+    '@/src/utils/permissions': permissions,
   });
   const fresh = new QueryClient();
   for (const options of [reads.useParts('', null), reads.usePart('srv-1'), reads.useCategories(),
@@ -136,6 +142,31 @@ async function main() {
   assert.equal(server.some(p => p.id === 2), false);
   assert.equal(server.find(p => p.id === 4).quantity, 7);
   console.log('PASS reconnect: real sync engine sends all three operations, applies ACKs, reconciles and empties IDB queue (fixture API)');
+  await reloaded.reconcileInventory(catalog([row(1), { ...row(2), boat_id: 2 }]), []);
+  for (const role of ['chief_engineer', 'mechanic', 'admin', 'inspector']) {
+    actor = { ...actor, role, boat_id: role === 'admin' || role === 'inspector' ? null : 1 };
+    const global = role === 'admin' || role === 'inspector';
+    assert.equal((await reads.useParts('', null).queryFn()).length, global ? 2 : 1);
+    assert.equal((await reads.useParts('', null, 2).queryFn())[0].boat_id, global ? 2 : 1);
+    assert.equal(!!(await reads.usePart('srv-2').queryFn()), global);
+    if (!global) {
+      await assert.rejects(hooks.useUpdatePart().mutationFn({ rowUid: 'srv-2', fields: { quantity: 9 } }));
+      await assert.rejects(hooks.useDeletePart().mutationFn('srv-2'));
+      assert.throws(() => hooks.useCreatePart().mutationFn({ boat_id: 2, name: 'Forbidden' }));
+    }
+    if (role === 'mechanic') {
+      assert.throws(() => hooks.useCreatePart().mutationFn({ boat_id: 1, name: 'Forbidden' }));
+      await assert.rejects(hooks.useUpdatePart().mutationFn({ rowUid: 'srv-1', fields: { name: 'Forbidden' } }));
+      await hooks.useUpdatePart().mutationFn({ rowUid: 'srv-1', fields: { quantity: 12 } });
+      assert.equal((await s.getPart('srv-1')).quantity, 12);
+    }
+    console.log('PASS boat scope: ' + role + ' reads and direct mutation permissions');
+  }
+  actor = { ...actor, role: 'chief_engineer', boat_id: null };
+  assert.equal((await reads.useParts('', null).queryFn()).length, 0);
+  assert.equal(await reads.usePart('srv-1').queryFn(), null);
+  assert.throws(() => hooks.useCreatePart().mutationFn({ boat_id: 1, name: 'Forbidden' }));
+  console.log('PASS ship role without assigned boat fails closed');
   qc.unmount(); qc.clear(); fresh.clear();
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => onlineManager.setOnline(true));

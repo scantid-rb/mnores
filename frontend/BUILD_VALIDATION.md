@@ -1,75 +1,75 @@
-# PWA de producción: compatibilidad Safari/iOS
+# PWA de producción: permisos por barco
 
-Fuente actualizada desde GitHub: `daf0edf29c4b2a15d7484cf12deff74905b84487`,
-exclusivamente `scantid-rb/mnores:pwa`.
+Fuente: `9a20be13081776f71578470cff9bfea93a9f822c`, último commit de
+`scantid-rb/mnores:pwa` al actualizar. Incluye `8d17edf7` y `9a20be13`.
+Destino de la build: `https://mnores.atwebpages.com/pwa/`.
 
-## Correcciones acotadas
+## Auditoría y correcciones acotadas
 
-- `app/part-edit.tsx` todavía importaba directamente
-  `react-native-keyboard-controller`. Se sustituye por el wrapper existente
-  `KeyboardAwareScrollViewCompat`, también en sus etiquetas JSX. El navegador
-  utiliza ScrollView; se conserva el wrapper nativo del proyecto.
-- `yarn.lock` añade el selector exacto `expo-constants@57.0.20` a la entrada
-  existente `expo-constants@~57.0.20`. La resolución exacta de package.json no
-  tenía entrada propia y la instalación congelada intentaba actualizar el lock.
-  No cambian versiones, URLs, integridades ni dependencias del package.json.
-- Se regenera `pwa/` con base `/pwa` y API predeterminada de producción.
+- Inventario mantiene selector para Admin/Inspector. Jefe/Mecánico no lo tienen.
+  Creación del Jefe fija user.boat_id; Mecánico no crea, tampoco por ruta directa.
+- useParts ahora impone el barco de sesión aunque otro consumidor pase un filtro
+  distinto. Un usuario de barco sin asignación recibe inventario vacío.
+- usePart filtra el detalle por el mismo permiso; así la ruta directa de otro
+  barco no expone datos ni controles de cantidad/foto. Las claves de React Query
+  incluyen identidad, rol y ámbito para no reutilizar datos de otro permiso.
+- Las mutaciones locales validan creación/edición/borrado por rol y barco antes
+  de escribir IndexedDB. Mecánico solo modifica cantidad en edición; el detalle
+  permite cantidad/foto propias como autoriza el contrato existente del servidor.
+- part-edit espera la lectura local y redirige si el repuesto no existe o está
+  fuera del ámbito. No permite guardar un formulario antes de validar ese dato.
+- El .htaccess raíz recibido desde GitHub bloquea manifest.json por nombre.
+  frontend/public/.htaccess añade una excepción solo en la PWA y fallback SPA.
+  Se exporta a pwa/.htaccess. El build excluye esta configuración del precache
+  porque los dotfiles no se sirven por HTTP. No se cambia configuración raíz.
+- La limpieza de create forbidden de 9a20be13 queda intacta. Pruebas reales de
+  store.web + syncEngine confirman eliminación del repuesto, cola dependiente,
+  cola de fotos y blobs. Los errores invalid/HTTP 500 y forbidden de update
+  conservan el trabajo; un aborto de IndexedDB revierte toda la limpieza.
 
-No se cambian backend, API, roles/permisos, UX, IndexedDB, sync, fotos ni data.
-Se verifican perfil/contraseña por /api/account, identidad local sin pérdida,
-Jefe limitado a mecánicos del barco propio, Barcos para Admin/Inspector y
-exclusión del Mecánico de Administración. No se añaden funciones.
+Backend sigue siendo autoridad final. Se revisaron sus permisos sin editarlos.
+No hay cambios propios en PHP, API, data, base de datos ni otras ramas.
+Perfil, account, updateIdentity, administración, categorías, sincronización,
+service worker y wrappers Safari se conservan salvo lo descrito arriba.
 
-## Validaciones finales, después de restaurar dependencias
+## Resultados
 
-| Comando/comprobación | Resultado |
+| Validación | Resultado |
 | --- | --- |
-| `yarn install --frozen-lockfile --offline` | Correcto, paquetes instalados y scripts ejecutados |
-| `yarn typecheck` | Correcto |
-| `yarn lint` | Correcto, sin advertencias |
-| `yarn test` | 39 escenarios correctos: conectividad 4, offline/IndexedDB 23, SW 7, web/Alert 2, React Query/sync 3 |
-| `npx --no-install expo-doctor` | 20/20 comprobaciones correctas |
-| `PWA_BASE_PATH=/pwa EXPO_PUBLIC_API_BASE_URL=https://mnores.atwebpages.com yarn build:pwa` | Correcto, producción |
-| Mapa de fuentes de export auxiliar de la misma compilación | Metro resuelve KeyboardProviderCompat.web.tsx y KeyboardAwareScrollViewCompat.web.tsx; ningún módulo de react-native-keyboard-controller |
-| Bundle de producción | Sin KeyboardController ni APIs de esa biblioteca; App 0.1.1/API 1.4.5 y servidor mnores.atwebpages.com |
-| HTTP local con router PHP existente | 27 recursos de precache idénticos al archivo generado; 7 rutas SPA válidas |
-| Ejecución del bundle final en DOM simulado | Login, About/perfil para cuatro roles, Usuarios para Admin/Inspector/Jefe, Inventario, detalle y navegación a edición offline sin errores de render |
-| Restricciones de navegación en DOM simulado | Jefe en /admin/boats y Mecánico en /admin redirigen a Inventario |
-| Handshake en el bundle ejecutado | Reconexión muestra respuesta simulada y envía client_app_version=0.1.1/client_api_version=1.4.5 |
-| Registro SW ejecutado | /pwa/sw.js, scope /pwa/ |
+| Yarn install congelado con mirror offline externo | Correcto; yarn.lock sin cambios |
+| yarn typecheck | Correcto |
+| yarn lint | Correcto, sin avisos |
+| yarn test | 47 escenarios correctos: conectividad 4, IndexedDB 26, SW 7, web 2, Query/sync/permisos 8 |
+| npx --no-install expo-doctor | 20/20 correctos |
+| PWA_BASE_PATH=/pwa EXPO_PUBLIC_API_BASE_URL=https://mnores.atwebpages.com yarn build:pwa | Correcto |
+| Bundle ejecutado en JSDOM/fake-indexeddb | Login, About y perfil para cuatro roles; Usuarios Admin/Inspector/Jefe; inventario por barco; Jefe crea sin selector; detalle ajeno sin controles; Mecánico sin crear y con cantidad/foto propias |
+| Bundle About online con API simulada | Handshake envía client_app_version=0.1.1 y client_api_version=1.4.5; muestra versión recibida |
+| Export auxiliar con mapa de fuentes | Wrappers KeyboardProviderCompat.web.tsx y KeyboardAwareScrollViewCompat.web.tsx, sin módulos react-native-keyboard-controller; incluye permisos y limpieza forbidden |
+| HTTP local con router existente | 27 recursos y 7 rutas SPA correctos |
+| Apache 2.4 local con copia del .htaccess raíz | Manifest raíz sigue 403; manifest PWA 200 application/json; 27 recursos y 7 rutas SPA correctos |
+| Service Worker | Sintaxis válida; precache completo de archivos públicos; registro /pwa/sw.js y scope /pwa/; configuración Apache excluida |
 
-La descarga directa de Yarn inicialmente falló; para completar la restauración
-se descargaron los 850 tarballs indicados en el lockfile desde el registro y
-se verificaron sus SHA1 e integridades SHA512, sin discrepancias. Se alimentó
-un mirror temporal externo al repositorio y después la caché de Yarn. La
-instalación congelada final usa esa caché. Mirror, mapas y harness no se publican.
+API requerida 1.4.5, APP 0.1.1, servidor por defecto mnores.atwebpages.com.
+No hay devmn ni API 1.4.4 en bundle. Manifest standalone, icono ./icon.png.
+Acerca de incluye MIT y copyright © 2026 José Isidro González.
+Un literal localhost del parser genérico de Expo Linking no es servidor activo.
 
-Yarn conserva advertencias de peer dependencies y de resoluciones forzadas del
-proyecto; no son errores de instalación. También hay avisos no bloqueantes de
-url.parse, npm http-proxy y NO_COLOR/FORCE_COLOR. No se alteran versiones para
-ocultarlos. Expo Doctor no detecta problemas.
+## Artefacto y límites
 
-## Paquete final
+Build directamente en pwa/: 29 archivos, 3.878.849 bytes sin comprimir.
+ZIP ShipInventory-PWA-production.zip con contenido directo, sin carpeta pwa
+envolvente. Primer nivel: .htaccess, _expo/, assets/, favicon.ico, icon.png,
+icon.svg, index.html, manifest.json, metadata.json, sw.js.
+No incluye node_modules, frontend, src, data, PHP, vendor, .git, fuentes TS,
+mapas, caches, logs ni documentación. Incluir .htaccess en la subida manual.
 
-28 archivos, 3.876.464 bytes sin comprimir, directamente en `pwa/`.
-Primer nivel: `_expo/`, `assets/`, `favicon.ico`, `icon.png`, `icon.svg`,
-`index.html`, `manifest.json`, `metadata.json`, `sw.js`.
-ZIP sin carpeta envolvente, node_modules, fuentes TS/TSX, .git, mapas, cachés,
-logs, frontend, data, backend PHP ni temporales.
-Se excluye el bundle intermedio de Expo sin referencia en HTML/precache.
+Yarn mantiene advertencias de resoluciones y peer dependencies existentes.
+Restauración inicial sin mirror falló por caché incompleta; usando el mirror
+externo ya verificado contra el lockfile terminó correctamente. No se cambian
+versiones ni dependencias para ocultar avisos. Hay avisos de entorno de npm,
+url.parse y NO_COLOR/FORCE_COLOR; no bloquean build ni validaciones.
 
-HTML referencia /pwa/_expo, /pwa/manifest.json, /pwa/icon.svg y favicon.
-Manifest usa inicio/ámbito ./ e icon.png existente. SW incluye todos los assets
-exportados, excluye API/PHP y admite login/inventory/profile/admin/users/about/
-part y part-edit. Las siete rutas se comprobaron por HTTP local.
-Sin URLs de API a devmn, Codespaces ni localhost. Un literal localhost del
-parser genérico de Expo Linking no es un servidor ni una URL de recurso.
-
-El harness utiliza JSDOM y fake-indexeddb con datos desechables; no llama a
-AwardSpace ni usa data del proyecto. La suite prueba CRUD offline, colas,
-fotos, sincronización, conservación de identidad y actualización del SW.
-No sustituye Safari/iPhone real: queda confirmar teclado, cámara/galería,
-instalación, actualización del SW y sincronización con el servidor real.
-
-No se realiza ningún despliegue ni subida a AwardSpace. Subir el contenido del
-ZIP directamente dentro del directorio público /pwa/, sin carpetas añadidas.
+Las pruebas de bundle usan DOM/IndexedDB simulados; las HTTP usan un servidor
+local desechable. No se contacta ni despliega en AwardSpace ni se usa data.
+Queda comprobar en dispositivo real instalación/actualización, cámara/galería,
+teclado Safari y sincronización con API de producción tras la subida manual.

@@ -211,7 +211,7 @@ export default function PartDetailScreen() {
               ) : (
                 <Text style={styles.muted}>Sin foto</Text>
               )}
-              {canEdit && (
+              {canQty && (
                 <View style={styles.photoActions}>
                   <Pressable style={styles.photoBtn} onPress={() => void attachPhoto("camera")} disabled={photoBusy}>
                     <Text style={styles.photoBtnText}>{photoBusy ? "Procesando…" : "📷 Cámara"}</Text>

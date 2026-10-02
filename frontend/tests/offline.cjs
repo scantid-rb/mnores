@@ -129,6 +129,39 @@ async function main() {
   await s.updateSessionIdentity({id:99,username:'other',role:'admin',boat_id:null});
   return{pass:session.username==='after'&&session.last_sync_at==='cursor-before'&&before===after&&await web.hasWebPhotoBlob('identity-photo')&&(await s.getSession()).id===1};
  });
+ await record('forbidden create removes row, dependent edits, photos and blobs through sync',async()=>{
+  await s.saveSession({id:1,username:'chief',role:'chief_engineer',boat_id:1});
+  await s.createPartLocal(input('forbidden'));const first=(await s.getPendingChanges())[0];await s.claimChange(first.queue_id);
+  await s.updatePartLocal('forbidden',{quantity:19});await s.revertSyncing([first.queue_id]);
+  await web.saveWebPhotoBlob('forbidden-photo',new Blob(['photo']));await s.setLocalPhoto('forbidden','forbidden-photo');
+  await s.createPartLocal(input('retained'));
+  const engine=load('frontend/src/services/sync/syncEngine.ts',{
+   '@/src/database/store':{localStore:s},'@/src/services/api/client':{ApiError:class extends Error{}},
+   '@/src/services/photos/photoService':{photoExists:async()=>true},
+   '@/src/services/api/endpoints':{
+    apiPush:async(_token,[change])=>({ok:true,results:[{action:'create',local_id:change.local_id,status:change.local_id==='forbidden'?'forbidden':'invalid'}]}),
+    apiGetSync:async()=>({ok:true,server_time:'T1',parts:[]}),apiGetBoats:async()=>[],apiGetCategories:async()=>[],apiGetUsers:async()=>[]
+   }
+  });
+  await engine.runSync('token');await s.init();
+  return{pass:!(await s.getPart('forbidden'))&&!!(await s.getPart('retained'))&&
+   (await raw('db.queue')).every(e=>e.row_uid!=='forbidden')&&(await raw('db.photo.queue')).length===0&&
+   !(await web.hasWebPhotoBlob('forbidden-photo'))&&(await s.getFailedChanges()).length===1};
+ });
+ await record('forbidden update and recoverable create failures retain local work',async()=>{
+  await seed();await s.updatePartLocal('srv-1',{quantity:14});let q=await s.getPendingChanges();await s.markFailed(q[0].queue_id,'srv-1','forbidden');
+  await s.createPartLocal(input('recoverable'));await web.saveWebPhotoBlob('recoverable-photo',new Blob(['photo']));await s.setLocalPhoto('recoverable','recoverable-photo');
+  q=await s.getPendingChanges();await s.markRetry(q[0].queue_id,'HTTP 500');
+  return{pass:(await s.getPart('srv-1')).quantity===14&&!!(await s.getPart('recoverable'))&&
+   (await s.getFailedChanges()).length===1&&(await s.getPendingChanges()).length===1&&await web.hasWebPhotoBlob('recoverable-photo')};
+ });
+ await record('forbidden cleanup rolls back atomically on IndexedDB abort',async()=>{
+  await s.createPartLocal(input('rollback'));await web.saveWebPhotoBlob('rollback-photo',new Blob(['photo']));await s.setLocalPhoto('rollback','rollback-photo');
+  const q=(await s.getPendingChanges())[0];const orig=IDBObjectStore.prototype.put;let rejected=false;
+  IDBObjectStore.prototype.put=function(value,...rest){if(value.key==='db.queue'){this.transaction.abort();return undefined;}return orig.call(this,value,...rest);};
+  try{await s.markFailed(q.queue_id,'rollback','forbidden');}catch{rejected=true;}finally{IDBObjectStore.prototype.put=orig;}
+  return{pass:rejected&&!!(await s.getPart('rollback'))&&(await s.getPendingChanges()).length===1&&await web.hasWebPhotoBlob('rollback-photo')&&(await s.getPendingPhotos()).length===1};
+ });
  if (findings.some((result) => !result.pass)) process.exitCode = 1;
  for (const result of findings) console.log(`${result.pass ? 'PASS' : 'FAIL'} ${result.name}`);
 }

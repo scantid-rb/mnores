@@ -35,7 +35,7 @@ export default function PartEditScreen() {
 
   const { data: categories = [] } = useCategories();
   const { data: boats = [] } = useBoats();
-  const { data: existing } = usePart(isEdit ? String(rowUid) : "");
+  const { data: existing, isLoading: partLoading } = usePart(isEdit ? String(rowUid) : "");
   const createPart = useCreatePart();
   const updatePart = useUpdatePart();
 
@@ -75,6 +75,8 @@ export default function PartEditScreen() {
   if (accessMode === "readonly") return <Redirect href="/inventory" />;
   if (!token || !session) return <Redirect href="/login" />;
   if (!isEdit && !canCreate) return <Redirect href="/inventory" />;
+  if (isEdit && partLoading) return <Text>Cargando…</Text>;
+  if (isEdit && !existing) return <Redirect href="/inventory" />;
   if (isEdit && existing && !isGlobalInventoryRole && existing.boat_id !== user?.boat_id) return <Redirect href="/inventory" />;
 
   const onSave = () => {

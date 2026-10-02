@@ -30,7 +30,9 @@ for (const file of walk(output).filter((file) => /entry-[a-f0-9]+\.js$/.test(fil
 }
 html = html.replace('href="./manifest.json"', `href="${base}/manifest.json"`).replace('href="./icon.svg"', `href="${base}/icon.svg"`);
 fs.writeFileSync(htmlFile, html);
-const files = walk(output).filter((file) => !file.endsWith(`${path.sep}sw.js`)).sort();
+// Apache configuration is deployed with the PWA, but must not be fetched by
+// the service worker (Apache deliberately prevents HTTP access to dotfiles).
+const files = walk(output).filter((file) => !file.endsWith(`${path.sep}sw.js`) && path.basename(file) !== ".htaccess").sort();
 const hash = crypto.createHash("sha256");
 for (const file of files) hash.update(path.relative(output, file)).update(fs.readFileSync(file));
 const buildId = hash.digest("hex").slice(0, 16);
