@@ -17,7 +17,7 @@ import { useCreatePart, useUpdatePart } from "@/src/hooks/usePartMutations";
 import { useSession } from "@/src/state/SessionContext";
 import { makeStyles, useTheme } from "@/src/theme";
 import { EditablePartFields } from "@/src/types";
-import { canEditFields } from "@/src/utils/permissions";
+import { canCreatePart, canEditFields } from "@/src/utils/permissions";
 
 export default function PartEditScreen() {
   const styles = useStyles();
@@ -30,6 +30,8 @@ export default function PartEditScreen() {
 
   const { user, token, session, mode: accessMode } = useSession();
   const fullEdit = canEditFields(user?.role);
+  const isGlobalInventoryRole = user?.role === "admin" || user?.role === "inspector";
+  const canCreate = canCreatePart(user?.role);
 
   const { data: categories = [] } = useCategories();
   const { data: boats = [] } = useBoats();
@@ -72,6 +74,8 @@ export default function PartEditScreen() {
 
   if (accessMode === "readonly") return <Redirect href="/inventory" />;
   if (!token || !session) return <Redirect href="/login" />;
+  if (!isEdit && !canCreate) return <Redirect href="/inventory" />;
+  if (isEdit && existing && !isGlobalInventoryRole && existing.boat_id !== user?.boat_id) return <Redirect href="/inventory" />;
 
   const onSave = () => {
     setError(null);
@@ -101,7 +105,7 @@ export default function PartEditScreen() {
         : { quantity: parsedQty };
       updatePart.mutate({ rowUid: String(rowUid), fields }, { onSuccess: () => router.back() });
     } else {
-      const targetBoatId = boatId ?? user?.boat_id;
+      const targetBoatId = isGlobalInventoryRole ? boatId : user?.boat_id;
       if (targetBoatId == null) {
         setError("Selecciona un barco.");
         return;
@@ -135,10 +139,10 @@ export default function PartEditScreen() {
 
       <KeyboardAwareScrollViewCompat bottomOffset={24} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Field label="Barco">
-          {fullEdit && !isEdit ? (
+          {fullEdit && !isEdit && isGlobalInventoryRole ? (
             <View style={styles.chipsRow}>
               {boats.filter((b) => b.is_active).map((b) => {
-                const active = (boatId ?? user?.boat_id) === b.id;
+                const active = boatId === b.id;
                 return (
                   <Text
                     key={b.id}
