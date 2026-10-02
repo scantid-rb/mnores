@@ -821,6 +821,21 @@ class WebStore implements LocalStore {
   async markFailed(queueId: string, rowUid: string, lastError: string): Promise<void> {
     const q = await this.queue();
     const e = q.find((x) => x.queue_id === queueId);
+
+    // A forbidden create can never become valid by retrying. Remove the
+    // optimistic local row and its queued work so a part for an unauthorized
+    // boat cannot remain as a permanent "ghost" in the PWA cache.
+    if (e?.action === "create" && lastError === "forbidden") {
+      const photos = await readJson<PendingPhoto[]>(K.photos, []);
+      for (const photo of photos.filter((p) => p.row_uid === rowUid)) {
+        await idbPhotoRemove(photo.local_path);
+      }
+      await writeJson(K.photos, photos.filter((p) => p.row_uid !== rowUid));
+      await writeJson(K.queue, q.filter((x) => x.row_uid !== rowUid));
+      await writeJson(K.parts, (await this.parts()).filter((p) => p.row_uid !== rowUid));
+      return;
+    }
+
     if (e) {
       e.status = "failed";
       e.last_error = lastError;
