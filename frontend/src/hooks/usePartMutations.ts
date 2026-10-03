@@ -1,3 +1,4 @@
+import { withCacheOwner } from "@/src/repositories/sessionLifecycle";
 // Local-first mutations. Each writes SQLite immediately (part + queue in a
 // transaction), invalidates the affected read queries, then kicks a sync pass
 // (which is a no-op offline). The user sees the change instantly regardless of
@@ -32,8 +33,8 @@ export function useCreatePart() {
     networkMode: "always",
     mutationFn: (input: Omit<CreatePartInput, "local_id">) => {
       if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
-      if (!canCreatePart(user?.role) || !canAccessBoat(user, input.boat_id)) throw new Error("No tienes permiso para crear repuestos en este barco.");
-      return inventoryRepository.createPart({ ...input, local_id: newLocalId() });
+      if (!user || !canCreatePart(user.role) || !canAccessBoat(user, input.boat_id)) throw new Error("No tienes permiso para crear repuestos en este barco.");
+      return withCacheOwner(user.id, () => inventoryRepository.createPart({ ...input, local_id: newLocalId() }));
     },
     onSuccess: (part) => after(part.row_uid),
   });
@@ -47,10 +48,13 @@ export function useUpdatePart() {
     networkMode: "always",
     mutationFn: async ({ rowUid, fields }: { rowUid: string; fields: EditablePartFields }) => {
       if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
-      const part = await inventoryRepository.getPart(rowUid);
-      if (!part || !canAccessBoat(user, part.boat_id) || !canEditQuantity(user?.role)) throw new Error("No tienes permiso para editar este repuesto.");
-      if (!canEditFields(user?.role) && Object.keys(fields).some((key) => key !== "quantity")) throw new Error("Solo puedes modificar la cantidad.");
-      return inventoryRepository.updatePart(rowUid, fields);
+      if (!user) throw new Error("Necesitas iniciar sesión.");
+      return withCacheOwner(user.id, async () => {
+        const part = await inventoryRepository.getPart(rowUid);
+        if (!part || !canAccessBoat(user, part.boat_id) || !canEditQuantity(user?.role)) throw new Error("No tienes permiso para editar este repuesto.");
+        if (!canEditFields(user?.role) && Object.keys(fields).some((key) => key !== "quantity")) throw new Error("Solo puedes modificar la cantidad.");
+        return inventoryRepository.updatePart(rowUid, fields);
+      });
     },
     onSuccess: (_r, vars) => after(vars.rowUid),
   });
@@ -64,9 +68,12 @@ export function useDeletePart() {
     networkMode: "always",
     mutationFn: async (rowUid: string) => {
       if (mode === "readonly") throw new Error("El inventario está en modo solo lectura.");
-      const part = await inventoryRepository.getPart(rowUid);
-      if (!part || !canDeletePart(user?.role) || !canAccessBoat(user, part.boat_id)) throw new Error("No tienes permiso para eliminar este repuesto.");
-      return inventoryRepository.deletePart(rowUid);
+      if (!user) throw new Error("Necesitas iniciar sesión.");
+      return withCacheOwner(user.id, async () => {
+        const part = await inventoryRepository.getPart(rowUid);
+        if (!part || !canDeletePart(user?.role) || !canAccessBoat(user, part.boat_id)) throw new Error("No tienes permiso para eliminar este repuesto.");
+        return inventoryRepository.deletePart(rowUid);
+      });
     },
     onSuccess: (_r, rowUid) => after(rowUid),
   });

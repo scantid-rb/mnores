@@ -58,6 +58,7 @@ async function main() {
   const server=[];let call=0;
   class ApiError extends Error{}
   const engine=load('frontend/src/services/sync/syncEngine.ts',{
+   '@/src/repositories/sessionLifecycle':{withSessionLock:fn=>fn(),isSyncSessionCurrent:async()=>true},
    '@/src/database/store':{localStore:s},'@/src/services/api/client':{ApiError},
    '@/src/services/photos/photoService':{photoExists:async()=>true,uploadPartPhoto:async()=>({updated_at:'T2'})},
    '@/src/services/api/endpoints':{
@@ -136,6 +137,7 @@ async function main() {
   await web.saveWebPhotoBlob('forbidden-photo',new Blob(['photo']));await s.setLocalPhoto('forbidden','forbidden-photo');
   await s.createPartLocal(input('retained'));
   const engine=load('frontend/src/services/sync/syncEngine.ts',{
+   '@/src/repositories/sessionLifecycle':{withSessionLock:fn=>fn(),isSyncSessionCurrent:async()=>true},
    '@/src/database/store':{localStore:s},'@/src/services/api/client':{ApiError:class extends Error{}},
    '@/src/services/photos/photoService':{photoExists:async()=>true},
    '@/src/services/api/endpoints':{

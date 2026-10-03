@@ -63,6 +63,7 @@ async function main() {
   const permissions = load('src/utils/permissions.ts', {});
   const session = { useSession: () => ({ mode: 'authenticated', user: actor }) };
   const hooks = load('src/hooks/usePartMutations.ts', {
+    '@/src/repositories/sessionLifecycle': { withCacheOwner: (_id, fn) => fn() },
     '@tanstack/react-query': { useMutation: options => options, useQueryClient: () => qc },
     '@/src/repositories/inventoryRepository': repo,
     '@/src/state/SessionContext': session,
@@ -116,6 +117,7 @@ async function main() {
   const server = [row(1), row(2), row(3)];
   const sent = [];
   const engine = load('src/services/sync/syncEngine.ts', {
+    '@/src/repositories/sessionLifecycle': { withSessionLock: fn => fn(), isSyncSessionCurrent: async () => true },
     '@/src/database/store': { localStore: reloaded },
     '@/src/services/api/client': { ApiError: class extends Error {} },
     '@/src/services/photos/photoService': { photoExists: async () => true },

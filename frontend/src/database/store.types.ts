@@ -20,7 +20,8 @@ import {
 export interface LocalStore {
   init(): Promise<void>;
 
-  // Session metadata (never the token/password).
+  // Non-secret session metadata also identifies the owner of retained cache/queues.
+  // It does not authenticate a user without the separate token.
   saveSession(user: SessionUser): Promise<void>;
   updateSessionIdentity(user: SessionUser): Promise<void>;
   getSession(): Promise<SessionRow | null>;

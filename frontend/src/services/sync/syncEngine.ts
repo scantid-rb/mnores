@@ -1,3 +1,4 @@
+import { isSyncSessionCurrent, withSessionLock } from "@/src/repositories/sessionLifecycle";
 // Sync Engine.
 // Pushes pending changes, then pulls either the initial full snapshot or an
 // incremental /api/sync?since=<last_server_time> delta and reconciles it with
@@ -358,7 +359,7 @@ function mergeParts(current: LocalPart[], delta: Part[]): Part[] {
   return mergeById(currentServerParts, delta);
 }
 
-export async function pullAndReconcile(token: string): Promise<Pick<SyncSummary, "receivedParts" | "receivedActiveParts" | "receivedDeletedParts" | "cachedParts" | "protectedIds" | "missingActiveIds">> {
+async function pullAndReconcileCurrent(token: string): Promise<Pick<SyncSummary, "receivedParts" | "receivedActiveParts" | "receivedDeletedParts" | "cachedParts" | "protectedIds" | "missingActiveIds">> {
   const session = await localStore.getSession();
   const lastSyncAt = session?.last_sync_at ?? null;
 
@@ -411,7 +412,7 @@ export async function pullAndReconcile(token: string): Promise<Pick<SyncSummary,
   };
 }
 
-export async function runSync(token: string): Promise<SyncSummary> {
+async function runSyncCurrent(token: string): Promise<SyncSummary> {
   const summary = await processQueue(token);
   if (summary.authError || summary.networkError) return summary;
 
@@ -434,7 +435,7 @@ export async function runSync(token: string): Promise<SyncSummary> {
   }
 
   try {
-    const syncStats = await pullAndReconcile(token);
+    const syncStats = await pullAndReconcileCurrent(token);
     summary.receivedParts = syncStats.receivedParts;
     summary.receivedActiveParts = syncStats.receivedActiveParts;
     summary.receivedDeletedParts = syncStats.receivedDeletedParts;
@@ -470,4 +471,37 @@ export async function runSync(token: string): Promise<SyncSummary> {
     };
   }
   return summary;
+}
+
+
+export async function runSync(token: string): Promise<SyncSummary> {
+  return withSessionLock(async () => {
+    const blocked: SyncSummary = {
+      pushed: 0, ok: 0, conflicts: 0, failed: 0, notFound: 0,
+      authError: false, networkError: false, serverError: false, diagnostics: null,
+      receivedParts: 0, receivedActiveParts: 0, receivedDeletedParts: 0, cachedParts: 0,
+      protectedIds: [], missingActiveIds: [],
+    };
+    try {
+      if (!await isSyncSessionCurrent(token)) { blocked.authError = true; return blocked; }
+    } catch (error) {
+      if (error instanceof ApiError) {
+        blocked.authError = error.status === 401 || error.status === 403;
+        blocked.networkError = error.kind === "network" || error.kind === "timeout";
+        blocked.serverError = !blocked.authError && !blocked.networkError;
+        blocked.diagnostics = errorDiag(error, "/api/me", "GET");
+      } else {
+        blocked.serverError = true;
+        blocked.diagnostics = unknownDiag(error, "/api/me", "GET");
+      }
+      return blocked;
+    }
+    return runSyncCurrent(token);
+  });
+}
+export async function pullAndReconcile(token: string): Promise<Pick<SyncSummary, "receivedParts" | "receivedActiveParts" | "receivedDeletedParts" | "cachedParts" | "protectedIds" | "missingActiveIds">> {
+  return withSessionLock(async () => {
+    if (!await isSyncSessionCurrent(token)) throw new Error("La sesión no pertenece al propietario de la caché.");
+    return pullAndReconcileCurrent(token);
+  });
 }

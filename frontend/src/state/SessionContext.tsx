@@ -6,7 +6,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 import { queryClient } from "@/src/query-client";
 import { localStore } from "@/src/database/store";
-import { initializeServerConfig, setServerUrl } from "@/src/services/serverConfig";
+import { initializeServerConfig } from "@/src/services/serverConfig";
 import { sessionRepository } from "@/src/repositories/sessionRepository";
 import { SessionRow, SessionUser } from "@/src/types";
 
@@ -67,6 +67,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const { token: t, user: u } = await sessionRepository.login(username, password);
     const fresh = await localStore.getSession();
     const counts = await localStore.getCounts();
+    queryClient.clear();
     setToken(t);
     setUser(u);
     setSession(fresh);
@@ -87,13 +88,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    await sessionRepository.logout();
+    // Ignore an auth failure from a sync started with an older credential.
+    if (!await sessionRepository.logout(token ?? undefined)) return;
     setToken(null);
     setUser(null);
     setSession(null);
     setMode("none");
     queryClient.clear();
-  }, []);
+  }, [token]);
 
   const enterReadonly = useCallback(async () => {
     const counts = await localStore.getCounts();
@@ -113,9 +115,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const switchServer = useCallback(async (url: string) => {
-    await sessionRepository.logout();
-    await localStore.clearUserData();
-    await setServerUrl(url);
+    await sessionRepository.switchServer(url);
     queryClient.clear();
     setToken(null);
     setUser(null);

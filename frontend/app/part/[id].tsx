@@ -1,3 +1,4 @@
+import { withCacheOwner } from "@/src/repositories/sessionLifecycle";
 // Part detail. Reads from the local cache (offline-capable). Role-based
 // actions: quantity +/- (chief_engineer, mechanic), edit fields and delete
 // (chief_engineer). Delete uses an inline two-step confirm (no Alert).
@@ -15,7 +16,7 @@ import { useCategories, usePart } from "@/src/hooks/useInventory";
 import { useDeletePart, useUpdatePart } from "@/src/hooks/usePartMutations";
 import { useSession } from "@/src/state/SessionContext";
 import { localStore } from "@/src/database/store";
-import { pickPartPhoto, remotePartPhotoUrl, resolveLocalPhotoUri } from "@/src/services/photos/photoService";
+import { removeLocalPhoto, pickPartPhoto, remotePartPhotoUrl, resolveLocalPhotoUri } from "@/src/services/photos/photoService";
 import { useSync } from "@/src/state/SyncContext";
 import { makeStyles, useTheme } from "@/src/theme";
 import { SyncState } from "@/src/types";
@@ -117,7 +118,12 @@ export default function PartDetailScreen() {
     try {
       const localPath = await pickPartPhoto(source);
       if (!localPath) return;
-      await localStore.setLocalPhoto(rowUid, localPath);
+      try {
+        await withCacheOwner(user?.id ?? 0, () => localStore.setLocalPhoto(rowUid, localPath));
+      } catch (error) {
+        await removeLocalPhoto(localPath);
+        throw error;
+      }
       await queryClient.invalidateQueries({ queryKey: ["part", rowUid] });
       await syncNow();
     } catch (e) {
