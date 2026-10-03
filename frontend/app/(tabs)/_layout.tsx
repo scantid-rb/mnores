@@ -9,7 +9,7 @@ import { useTheme } from "@/src/theme";
 
 function TabLabel({ label, focused }: { label: string; focused: boolean }) {
   const { colors } = useTheme();
-  return <Text style={{ fontSize: 12, fontWeight: focused ? "700" : "500", color: focused ? colors.brandPrimary : colors.muted }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>;
+  return <Text style={{ fontSize: 12, lineHeight: 16, textAlign: "center", fontWeight: focused ? "700" : "500", color: focused ? colors.brandPrimary : colors.muted }} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>;
 }
 
 export default function TabsLayout() {
@@ -29,7 +29,7 @@ export default function TabsLayout() {
       tabBarActiveTintColor: colors.brandPrimary,
       tabBarInactiveTintColor: colors.muted,
       tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, ...(Platform.OS === "web" ? { height: 64 } : {}) },
-      tabBarItemStyle: { alignSelf: "center" },
+      tabBarItemStyle: { justifyContent: "center" },
     }}>
       <Tabs.Screen name="inventory" options={{ title: "Inventario", tabBarIcon: () => null, tabBarLabel: ({ focused }) => <TabLabel label={readonly ? "Solo lectura" : "Inventario"} focused={focused} /> }} />
       <Tabs.Screen name="sync" options={{ title: "Sync", href: readonly ? null : "/sync", tabBarIcon: () => null, tabBarLabel: ({ focused }) => <TabLabel label="Sync" focused={focused} /> }} />
