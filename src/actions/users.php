@@ -17,7 +17,7 @@ function _load_user(int $id): ?array {
 }
 
 function _boats_list(): array {
-    return db()->query('SELECT id, name, is_active FROM boats ORDER BY name')->fetchAll();
+    return db()->query('SELECT id, name, is_active FROM boats WHERE deleted_at IS NULL ORDER BY name')->fetchAll();
 }
 
 // Rutas
@@ -193,7 +193,7 @@ function _validate_user_form(array $d, ?array $existing, array $allowed_roles): 
 
     // Barco existe si se indica.
     if ($d['boat_id'] !== null) {
-        $q = db()->prepare('SELECT id FROM boats WHERE id = :id');
+        $q = db()->prepare('SELECT id FROM boats WHERE id = :id AND deleted_at IS NULL');
         $q->execute([':id' => $d['boat_id']]);
         if (!$q->fetch()) $errs[] = 'Barco no válido.';
     }

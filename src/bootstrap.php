@@ -19,9 +19,6 @@ error_reporting(E_ALL);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
-// Cabeceras de seguridad razonables (aplicables a todas las respuestas HTML).
-// NOTA: frame-ancestors omitido/permisivo para permitir la vista previa por iframe.
-// En despliegue real, restringir con X-Frame-Options: SAMEORIGIN si el servidor no se embebe en otros orígenes.
 if (!headers_sent()) {
     header('X-Content-Type-Options: nosniff');
     header('Referrer-Policy: same-origin');
@@ -38,11 +35,20 @@ session_set_cookie_params([
 session_name('INVAPPSID');
 session_start();
 
-if (is_installed()) {
+$installed = is_installed();
+
+// A fresh installation may reuse a browser that still carries an authenticated
+// session from a previous database. Never let that stale user_id reach
+// current_user(), because the new database does not have the users table yet.
+if (!$installed) {
+    unset($_SESSION['user_id'], $_SESSION['last_activity']);
+}
+
+if ($installed) {
     try { db_migrate(db()); } catch (Throwable $e) { error_log('Migrate error: ' . $e->getMessage()); }
 }
 
-if (isset($_SESSION['user_id'])) {
+if ($installed && isset($_SESSION['user_id'])) {
     $now = time();
     if (isset($_SESSION['last_activity']) && ($now - $_SESSION['last_activity']) > SESSION_IDLE_SECONDS) {
         $_SESSION = []; session_destroy(); session_start();
@@ -50,7 +56,7 @@ if (isset($_SESSION['user_id'])) {
     } else { $_SESSION['last_activity'] = $now; }
 }
 
-if (is_installed() && isset($_SESSION['user_id'])) {
+if ($installed && isset($_SESSION['user_id'])) {
     $ap  = current_path();
     $am  = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     if (autobackup_should_check($ap, $am) && autobackup_due()) {

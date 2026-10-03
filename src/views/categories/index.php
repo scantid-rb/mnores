@@ -22,7 +22,8 @@
             <?php foreach ($rows as $r): $sys = (int)$r['is_system'] === 1; ?>
                 <tr data-testid="cat-row-<?= (int)$r['id'] ?>">
                     <td>
-                        <?= e($r['name']) ?>
+                        <a href="<?= e(url('/parts?category_id=' . (int)$r['id'])) ?>"
+                           data-testid="cat-inventory-link-<?= (int)$r['id'] ?>"><?= e($r['name']) ?></a>
                         <?php if ($sys): ?><span class="tag">sistema</span><?php endif; ?>
                     </td>
                     <td class="row-actions">

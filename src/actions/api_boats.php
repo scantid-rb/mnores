@@ -36,7 +36,7 @@ function api_boat_validate(string $name, string $registration, ?int $id = null):
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
-    $rows = db()->query('SELECT id, name, registration, is_active, updated_at, deleted_at FROM boats ORDER BY name COLLATE NOCASE')->fetchAll();
+    $rows = db()->query('SELECT id, name, registration, is_active, updated_at, deleted_at FROM boats WHERE deleted_at IS NULL ORDER BY name COLLATE NOCASE')->fetchAll();
     foreach ($rows as &$row) {
         $row['id'] = (int)$row['id'];
         $row['is_active'] = (int)$row['is_active'];
@@ -91,7 +91,7 @@ if ($action === 'create') {
 
 $id = (int)($input['id'] ?? 0);
 $old = $id > 0 ? api_boat_row($id) : null;
-if (!$old) {
+if (!$old || $old['deleted_at'] !== null) {
     http_response_code(404);
     echo json_encode(['ok' => false, 'error' => 'Barco no encontrado']);
     return;
@@ -139,19 +139,19 @@ if ($action === 'delete') {
         http_response_code(409);
         echo json_encode([
             'ok' => false,
-            'error' => 'No se puede eliminar el barco porque todavía tiene elementos asociados.',
+            'error' => 'No se puede eliminar el barco porque conserva usuarios asignados o repuestos activos.',
             'users_count' => $users,
             'parts_count' => $parts,
         ]);
         return;
     }
 
-    db()->prepare('DELETE FROM boats WHERE id=:id')->execute([':id' => $id]);
+    db()->prepare("UPDATE boats SET deleted_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), is_active=0 WHERE id=:id")->execute([':id' => $id]);
     audit_log('boat.delete', 'boat', $id, $id, [
         'name' => $old['name'],
         'registration' => $old['registration'],
     ]);
-    echo json_encode(['ok' => true, 'deleted' => true, 'boat' => $old]);
+    echo json_encode(['ok' => true, 'deleted' => true, 'boat' => api_boat_row($id)]);
     return;
 }
 

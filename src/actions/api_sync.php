@@ -35,10 +35,9 @@ $sinceParts = $since !== '' ? $since : '0000-01-01T00:00:00.000Z';
 
 function fetch_boats(PDO $pdo, string $since, string $cutoff, bool $full): array {
     // Los barcos se mantienen como catálogo pequeño y se sincronizan siempre
-    // como snapshot completo. Esto es necesario porque la eliminación de un
-    // barco es física (no deja tombstone en la tabla boats). Si aquí se enviara
-    // solo el delta, Android no tendría forma de saber que un barco eliminado
-    // ya no existe en el servidor.
+    // como snapshot completo. Las filas con deleted_at se conservan como
+    // tombstones para que PWA/Android retiren el barco de sus listados locales
+    // sin romper las claves foráneas históricas de parts.
     return $pdo->query(
         'SELECT id, name, registration, is_active, updated_at, deleted_at
          FROM boats

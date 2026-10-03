@@ -7,6 +7,49 @@ require __DIR__ . '/src/api_auth.php';
 $path   = current_path();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 
+// CORS para la API: permite únicamente orígenes web explícitamente autorizados.
+// En desarrollo se permiten los dominios de Codespaces; en producción se añadirá
+// el origen definitivo de la PWA. Las apps nativas no dependen de CORS.
+if (str_starts_with($path, '/api/')) {
+    $origin = trim((string)($_SERVER['HTTP_ORIGIN'] ?? ''));
+    $allowed = false;
+
+    if ($origin !== '') {
+        $host = parse_url($origin, PHP_URL_HOST);
+        $scheme = parse_url($origin, PHP_URL_SCHEME);
+
+        // Desarrollo: cualquier subdominio HTTPS de app.github.dev.
+        // No se permite HTTP ni otros dominios.
+        if ($scheme === 'https' && is_string($host)
+            && preg_match('/^[a-z0-9-]+\.app\.github\.dev$/i', $host)) {
+            $allowed = true;
+        }
+
+        // Producción: origen oficial de la PWA.
+        if ($origin === 'https://mnores.atwebpages.com') {
+            $allowed = true;
+        }
+    }
+
+    if ($allowed) {
+        header('Access-Control-Allow-Origin: ' . $origin);
+        header('Vary: Origin');
+        header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+        header('Access-Control-Allow-Headers: Authorization, Content-Type');
+        header('Access-Control-Max-Age: 86400');
+    }
+
+    // Preflight del navegador. No requiere autenticación.
+    if ($method === 'OPTIONS') {
+        if ($allowed) {
+            http_response_code(204);
+        } else {
+            http_response_code(403);
+        }
+        exit;
+    }
+}
+
 // Rutas de la API para la app Android (van antes que todo lo demás,
 // y no usan sesión/cookies ni CSRF, sino el carnet de acceso).
 if (str_starts_with($path, '/api/')) {
@@ -30,6 +73,9 @@ if (str_starts_with($path, '/api/')) {
         case '/api/me':
             if ($method === 'GET') { require __DIR__ . '/src/actions/api_me.php'; return; }
             break;
+        case '/api/account':
+            if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_account.php'; return; }
+            break;
         case '/api/sync':
             if ($method === 'GET') { require __DIR__ . '/src/actions/api_sync.php'; return; }
             break;
@@ -40,13 +86,12 @@ if (str_starts_with($path, '/api/')) {
             if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_boats.php'; return; }
             break;
         case '/api/categories':
-        if ($method === 'GET' || $method === 'POST') {
-            require __DIR__ . '/src/actions/api_categories.php';
-            return;
-        }
-        break;
-
-    case '/api/users':
+            if ($method === 'GET' || $method === 'POST') {
+                require __DIR__ . '/src/actions/api_categories.php';
+                return;
+            }
+            break;
+        case '/api/users':
             if ($method === 'GET' || $method === 'POST') { require __DIR__ . '/src/actions/api_users.php'; return; }
             break;
         case '/api/audit':
@@ -95,6 +140,9 @@ switch ($path) {
     case '/account':
         require __DIR__ . '/src/actions/account.php';
         return;
+    case '/about':
+        if ($method === 'GET') { require __DIR__ . '/src/actions/about.php'; return; }
+        break;
 }
 
 // Rutas de recursos con posibles subrutas.

@@ -123,3 +123,14 @@ El despliegue de código no sustituye al sistema de backups. Antes de una actual
 deploy.php está diseñado como instalador de un solo uso. Valida ZipArchive, el ZIP, las rutas internas y la presencia de index.php; rechaza rutas absolutas, traversal, data/, deploy.php y despliegue.zip dentro del paquete; extrae primero en un directorio temporal y solo se elimina a sí mismo y al ZIP después de completar correctamente el despliegue.
 
 No dejar deploy.php en el servidor de forma permanente.
+
+## 11. Cliente PWA en la rama pwa
+
+Compilar `frontend/` con `PWA_BASE_PATH=/pwa yarn build:pwa` siguiendo
+[frontend/README_PWA.md](frontend/README_PWA.md). El build se genera directamente en
+`pwa/` en la raíz del repositorio. Incluir esa carpeta y el `.htaccess` actualizado
+en el ZIP si se quiere publicar el cliente junto al backend. No incluir
+`frontend/node_modules/`, fuentes de desarrollo ni `data/`. Publicar primero
+los recursos y después HTML/SW; conservar los recursos anteriores durante
+la actualización. Se requiere HTTPS para instalar y usar el cliente offline.
+La publicación de cambios Git en la rama pwa no despliega el hosting.

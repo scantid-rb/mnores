@@ -13,8 +13,11 @@
         <?php if (in_array($user['role'], [ROLE_ADMIN, ROLE_INSPECTOR], true)): ?>
             <a class="home-link" href="<?= e(url('/users')) ?>" data-testid="home-link-users"><strong>Usuarios</strong><em>Gestión de cuentas</em></a>
         <?php endif; ?>
-        <a class="home-link" href="<?= e(url('/boats')) ?>" data-testid="home-link-boats"><strong>Barcos</strong><em>Registro de la flota</em></a>
+        <?php if (in_array($user['role'], [ROLE_ADMIN, ROLE_INSPECTOR], true)): ?>
+            <a class="home-link" href="<?= e(url('/boats')) ?>" data-testid="home-link-boats"><strong>Barcos</strong><em>Registro de la flota</em></a>
+        <?php endif; ?>
         <a class="home-link" href="<?= e(url('/categories')) ?>" data-testid="home-link-categories"><strong>Categorías</strong><em>Clasificación de repuestos</em></a>
         <a class="home-link" href="<?= e(url('/account')) ?>" data-testid="home-link-account"><strong>Mi cuenta</strong><em>Perfil y contraseña</em></a>
+        <a class="home-link" href="<?= e(url('/about')) ?>" data-testid="home-link-about"><strong>Acerca de</strong><em>Versión, información y licencia</em></a>
     </div>
 </section>

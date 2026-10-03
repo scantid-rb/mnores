@@ -21,7 +21,14 @@ $actor = api_require_auth();
 // $api_photo_id lo pone index.php al leer el número de la URL.
 $id = $api_photo_id ?? 0;
 
-$stmt = db()->prepare('SELECT id, boat_id, photo_path FROM parts WHERE id = :id');
+$photoPdo = db();
+$photoWrite = ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST';
+if ($photoWrite) {
+    $photoPdo->beginTransaction();
+    $photoPdo->exec('UPDATE parts SET id=id WHERE id=-1');
+}
+try {
+$stmt = db()->prepare('SELECT id, boat_id, photo_path FROM parts WHERE id = :id AND deleted_at IS NULL');
 $stmt->execute([':id' => $id]);
 $part = $stmt->fetch();
 
@@ -85,3 +92,12 @@ if ($method === 'POST') {
 http_response_code(405);
 header('Content-Type: application/json; charset=utf-8');
 echo json_encode(['ok' => false, 'error' => 'Método no permitido']);
+
+} catch (Throwable $e) {
+    if ($photoPdo->inTransaction()) $photoPdo->rollBack();
+    error_log('api/photos: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['ok' => false, 'error' => 'No se pudo guardar la fotografía.']);
+} finally {
+    if ($photoPdo->inTransaction()) $photoPdo->commit();
+}
