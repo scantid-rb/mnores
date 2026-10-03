@@ -84,6 +84,12 @@ foreach ($changes as $c) {
             continue;
         }
 
+        // This endpoint edits the existing boat, never reassigns inventory.
+        if (array_key_exists('boat_id', $c) && (!is_int($c['boat_id']) || $c['boat_id'] !== (int)$row['boat_id'])) {
+            $results[] = ['action' => 'update', 'id' => $id, 'status' => 'invalid'];
+            continue;
+        }
+
         $canEditAll = parts_can_edit_all($actor, $row);
         $canEditQuantity = parts_can_edit_quantity($actor, $row);
 

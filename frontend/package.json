@@ -11,8 +11,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "build:pwa": "node scripts/build-pwa.cjs",
-    "test": "node tests/connectivity.cjs && node tests/offline.cjs && node tests/sw.cjs && node tests/web.cjs && node tests/query-offline.cjs",
-    "test:api": "python3 tests/api.py"
+    "test": "node tests/connectivity.cjs && node tests/offline.cjs && node tests/sw.cjs && node tests/web.cjs && node tests/query-offline.cjs && node --test tests/session.cjs",
+    "test:api": "python3 tests/api.py && php tests/migration.php"
   },
   "dependencies": {
     "@expo/metro-runtime": "57.0.16",

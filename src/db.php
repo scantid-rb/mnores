@@ -67,6 +67,19 @@ function db_init_schema(PDO $pdo): void {
         updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
         deleted_at TEXT)");
 
+    // CREATE TABLE IF NOT EXISTS no actualiza las tablas antiguas. Estas
+    // columnas deben existir antes de índices, triggers e INSERT/UPDATE.
+    foreach (['boats', 'categories', 'parts'] as $t) {
+        $names = array_column($pdo->query("PRAGMA table_info($t)")->fetchAll(), 'name');
+        if (!in_array('updated_at', $names, true)) {
+            $pdo->exec("ALTER TABLE $t ADD COLUMN updated_at TEXT");
+            $pdo->exec("UPDATE $t SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE updated_at IS NULL");
+        }
+        if (!in_array('deleted_at', $names, true)) {
+            $pdo->exec("ALTER TABLE $t ADD COLUMN deleted_at TEXT");
+        }
+    }
+
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_boat ON parts(boat_id)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_search ON parts(name_norm)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_updated_at ON parts(updated_at)");
@@ -193,23 +206,7 @@ function db_migrate(PDO $pdo): void {
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_updated_at ON parts(updated_at)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_parts_deleted_at ON parts(deleted_at)");
     $pdo->exec("CREATE INDEX IF NOT EXISTS idx_boats_deleted_at ON boats(deleted_at)");
-
-    // --- Soporte API Android: columnas añadidas después del lanzamiento inicial.
-    // db_init_schema() ya las crea en instalaciones nuevas; esto cubre las
-    // que ya existían antes de este cambio (como esta misma instalación).
-    foreach (['boats', 'categories'] as $t) {
-        $tcols = $pdo->query("PRAGMA table_info($t)")->fetchAll();
-        $names = array_column($tcols, 'name');
-
-        if (!in_array('updated_at', $names, true)) {
-            $pdo->exec("ALTER TABLE $t ADD COLUMN updated_at TEXT");
-            $pdo->exec("UPDATE $t SET updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE updated_at IS NULL");
-        }
-
-        if (!in_array('deleted_at', $names, true)) {
-            $pdo->exec("ALTER TABLE $t ADD COLUMN deleted_at TEXT");
-        }
-    }
+    $pdo->exec("CREATE INDEX IF NOT EXISTS idx_categories_deleted_at ON categories(deleted_at)");
 }
 
 function is_installed(): bool {
