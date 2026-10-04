@@ -1,4 +1,4 @@
-# Despliegue automático — ShipInventory servidor 1.4.4
+# Despliegue automático — ShipInventory servidor 1.4.5
 
 Este documento describe el método de despliegue mediante deploy.php y despliegue.zip para la instalación plana utilizada en hosting compartido como AwardSpace.
 
@@ -24,6 +24,7 @@ El archivo debe llamarse exactamente despliegue.zip y contener la aplicación di
     ├── assets/
     ├── src/
     ├── vendor/
+    ├── pwa/                 cliente PWA compilado
     ├── composer.json
     ├── composer.lock
     ├── README.md
@@ -39,11 +40,11 @@ La carpeta data/ contiene la base de datos, fotografías, backups y otros datos 
 
 El ZIP debe generarse desde la raíz del proyecto de la versión que se quiere desplegar, respetando la estructura plana actual.
 
-Antes de generarlo, comprobar que existen index.php, src/, assets/ y vendor/, y que no se incluye data/.
+Antes de generarlo, comprobar que existen index.php, src/, assets/, vendor/ y pwa/, y que no se incluye data/.
 
 Ejemplo desde Linux/macOS/WSL:
 
-    zip -r despliegue.zip index.php router.php .htaccess assets src vendor composer.json composer.lock README.md README_DEPLOY.md api_contract_android.md CHANGELOG.md
+    zip -r despliegue.zip index.php router.php .htaccess assets src vendor pwa composer.json composer.lock README.md README_DEPLOY.md api_contract_android.md CHANGELOG.md LICENSE
 
 Comprobar el contenido antes de subirlo:
 
@@ -108,10 +109,10 @@ Por tanto, una actualización de código no debe eliminar usuarios, barcos, cate
 4. Probar el acceso desde Android.
 5. Probar una sincronización si el cambio afecta a la API.
 
-Para la rama 1.4.4 se esperan:
+Para la versión actual se esperan:
 
-    APP_VERSION    = 1.4.4
-    API_VERSION    = 1.4.4
+    APP_VERSION    = 1.4.5
+    API_VERSION    = 1.4.5
     SCHEMA_VERSION = 3
 
 ## 9. Backups
@@ -124,7 +125,7 @@ deploy.php está diseñado como instalador de un solo uso. Valida ZipArchive, el
 
 No dejar deploy.php en el servidor de forma permanente.
 
-## 11. Cliente PWA en la rama pwa
+## 11. Cliente PWA
 
 Compilar `frontend/` con `PWA_BASE_PATH=/pwa yarn build:pwa` siguiendo
 [frontend/README_PWA.md](frontend/README_PWA.md). El build se genera directamente en
@@ -133,4 +134,4 @@ en el ZIP si se quiere publicar el cliente junto al backend. No incluir
 `frontend/node_modules/`, fuentes de desarrollo ni `data/`. Publicar primero
 los recursos y después HTML/SW; conservar los recursos anteriores durante
 la actualización. Se requiere HTTPS para instalar y usar el cliente offline.
-La publicación de cambios Git en la rama pwa no despliega el hosting.
+El build actual corresponde a ShipInventory PWA 0.1.1 y requiere API 1.4.5. La publicación de cambios Git no despliega el hosting.
