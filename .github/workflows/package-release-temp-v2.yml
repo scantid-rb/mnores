@@ -1,0 +1,76 @@
+name: Temporary release package v2
+
+on:
+  push:
+    branches:
+      - pwa
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Validate release source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e data/photos/10.jpg
+          test -f index.php
+          test -f .htaccess
+          test -f src/config.php
+          test -f pwa/index.html
+          test -f pwa/sw.js
+          test -f pwa/manifest.json
+          grep -Fq "define('APP_VERSION',      '1.4.5')" src/config.php
+          grep -Fq "define('API_VERSION',      '1.4.5')" src/config.php
+          grep -Fq "foreach (['assets','src','vendor','pwa'] as \$dir)" src/backup.php
+          find src -type f -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null
+          php -l index.php >/dev/null
+          php -l router.php >/dev/null
+
+      - name: Build clean deployment ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/shipinventory-release"
+          mkdir -p "$OUT/data/photos" "$OUT/data/backups"
+
+          cp .htaccess index.php router.php composer.json composer.lock README_DEPLOY.md LICENSE "$OUT/"
+          cp -a assets src vendor pwa "$OUT/"
+
+          cp data/.htaccess "$OUT/data/.htaccess"
+          cp data/photos/.htaccess "$OUT/data/photos/.htaccess"
+          cp data/backups/.htaccess "$OUT/data/backups/.htaccess"
+
+          test ! -e "$OUT/data/app.sqlite"
+          test ! -e "$OUT/data/installed.lock"
+          test ! -e "$OUT/data/photos/10.jpg"
+          test ! -e "$OUT/deploy.php"
+          test ! -e "$OUT/frontend"
+
+          cd "$OUT"
+          zip -qr "$GITHUB_WORKSPACE/ShipInventory-server-1.4.5-PWA-0.1.1.zip" .
+          cd "$GITHUB_WORKSPACE"
+          sha256sum ShipInventory-server-1.4.5-PWA-0.1.1.zip > ShipInventory-server-1.4.5-PWA-0.1.1.zip.sha256
+          unzip -t ShipInventory-server-1.4.5-PWA-0.1.1.zip >/dev/null
+          unzip -l ShipInventory-server-1.4.5-PWA-0.1.1.zip | grep -F "src/backup.php"
+          unzip -l ShipInventory-server-1.4.5-PWA-0.1.1.zip | grep -F "pwa/index.html"
+          unzip -l ShipInventory-server-1.4.5-PWA-0.1.1.zip | grep -F "pwa/sw.js"
+          if unzip -l ShipInventory-server-1.4.5-PWA-0.1.1.zip | grep -Fq "data/photos/10.jpg"; then exit 1; fi
+
+      - name: Upload release package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShipInventory-release-package-v2
+          path: |
+            ShipInventory-server-1.4.5-PWA-0.1.1.zip
+            ShipInventory-server-1.4.5-PWA-0.1.1.zip.sha256
+          if-no-files-found: error
+          retention-days: 1
