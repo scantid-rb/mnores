@@ -61,7 +61,7 @@ if ($path === '/parts' && $method === 'GET') {
     $st->execute();
     $rows = $st->fetchAll();
 
-    $boats = db()->query('SELECT id, name, is_active FROM boats ORDER BY name')->fetchAll();
+    $boats = db()->query('SELECT id, name, is_active FROM boats WHERE deleted_at IS NULL ORDER BY name')->fetchAll();
     $cats  = db()->query('SELECT id, name FROM categories ORDER BY is_system DESC, name')->fetchAll();
 
     render('parts/index', compact('actor','rows','boats','cats','q','cat','sortBy','sortDir','page','pages','total','boat_id','forcedBoat') + ['title'=>'Inventario']);
@@ -72,7 +72,7 @@ if ($path === '/parts' && $method === 'GET') {
 if ($path === '/parts/new' && $method === 'GET') {
     $forcedBoat = parts_visible_boat_id($actor);
     if ($actor['role'] === ROLE_MECHANIC) { http_response_code(403); echo 'No autorizado'; return; }
-    $boats = db()->query('SELECT id,name,is_active FROM boats WHERE is_active=1 ORDER BY name')->fetchAll();
+    $boats = db()->query('SELECT id,name,is_active FROM boats WHERE is_active=1 AND deleted_at IS NULL ORDER BY name')->fetchAll();
     $cats  = db()->query('SELECT id,name FROM categories ORDER BY is_system DESC, name')->fetchAll();
     render('parts/form', ['title'=>'Nuevo repuesto','actor'=>$actor,'part'=>null,'boats'=>$boats,'cats'=>$cats,'errors'=>[],'forcedBoat'=>$forcedBoat,'warning'=>null]);
     return;
@@ -93,7 +93,7 @@ if ($path === '/parts' && $method === 'POST') {
         if ($dupRow) $warning = 'Ya existe un repuesto similar (ID ' . (int)$dupRow['id'] . '). Marca la confirmación para guardarlo igualmente.';
     }
     if ($errors || $warning) {
-        $boats = db()->query('SELECT id,name,is_active FROM boats WHERE is_active=1 ORDER BY name')->fetchAll();
+        $boats = db()->query('SELECT id,name,is_active FROM boats WHERE is_active=1 AND deleted_at IS NULL ORDER BY name')->fetchAll();
         $cats  = db()->query('SELECT id,name FROM categories ORDER BY is_system DESC, name')->fetchAll();
         render('parts/form', ['title'=>'Nuevo repuesto','actor'=>$actor,'part'=>null,'boats'=>$boats,'cats'=>$cats,'errors'=>$errors,'forcedBoat'=>parts_visible_boat_id($actor),'input'=>$d,'warning'=>$warning]);
         return;
@@ -142,7 +142,7 @@ if (preg_match('#^/parts/(\d+)(?:/(edit|delete|quantity|photo|photo/delete))?$#'
             // Chief no puede cambiar boat_id fuera del suyo.
             if (!$errors && !parts_can_create($actor, $d['boat_id'])) $errors[] = 'No autorizado sobre ese barco.';
             if ($errors) {
-                $boats = db()->query('SELECT id,name,is_active FROM boats ORDER BY name')->fetchAll();
+                $boats = db()->query('SELECT id,name,is_active FROM boats WHERE deleted_at IS NULL ORDER BY name')->fetchAll();
                 $cats  = db()->query('SELECT id,name FROM categories ORDER BY is_system DESC, name')->fetchAll();
                 render('parts/form', ['title'=>'Editar repuesto','actor'=>$actor,'part'=>$p,'boats'=>$boats,'cats'=>$cats,'errors'=>$errors,'forcedBoat'=>parts_visible_boat_id($actor),'input'=>$d,'warning'=>null]);
                 return;
@@ -161,7 +161,7 @@ if (preg_match('#^/parts/(\d+)(?:/(edit|delete|quantity|photo|photo/delete))?$#'
             $_SESSION['flash_success'] = 'Repuesto actualizado.';
             redirect('/parts/' . $id);
         }
-        $boats = db()->query('SELECT id,name,is_active FROM boats ORDER BY name')->fetchAll();
+        $boats = db()->query('SELECT id,name,is_active FROM boats WHERE deleted_at IS NULL ORDER BY name')->fetchAll();
         $cats  = db()->query('SELECT id,name FROM categories ORDER BY is_system DESC, name')->fetchAll();
         render('parts/form', ['title'=>'Editar repuesto','actor'=>$actor,'part'=>$p,'boats'=>$boats,'cats'=>$cats,'errors'=>[],'forcedBoat'=>parts_visible_boat_id($actor),'warning'=>null]);
         return;
@@ -243,7 +243,7 @@ function _validate_part_form(array $d): array {
         if (!$ok->fetch()) $errs[] = 'Categoría no válida.';
     }
     if ($d['boat_id'] > 0) {
-        $ok = db()->prepare('SELECT is_active FROM boats WHERE id=:id'); $ok->execute([':id'=>$d['boat_id']]);
+        $ok = db()->prepare('SELECT is_active FROM boats WHERE id=:id AND deleted_at IS NULL'); $ok->execute([':id'=>$d['boat_id']]);
         $r = $ok->fetch();
         if (!$r) $errs[] = 'Barco no válido.';
     }

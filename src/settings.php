@@ -18,6 +18,12 @@ const SETTINGS_DEFAULTS = [
 
 function settings_all(): array {
     $out = SETTINGS_DEFAULTS;
+
+    // During first-run installation there is intentionally no database yet.
+    // Rendering the installer must not create/open SQLite just to obtain UI
+    // defaults.
+    if (!is_installed()) return $out;
+
     try {
         foreach (db()->query('SELECT key, value FROM settings')->fetchAll() as $r) {
             $out[$r['key']] = (string)$r['value'];
@@ -48,6 +54,4 @@ function settings_set(array $kv): void {
         }
         $pdo->commit();
     } catch (Throwable $e) { $pdo->rollBack(); throw $e; }
-    // La siguiente lectura debe reflejar inmediatamente los valores guardados.
-
 }

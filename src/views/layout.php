@@ -30,6 +30,7 @@ $activeIn = function(array $paths) use ($__path) {
 <meta name="robots" content="noindex,nofollow">
 <title><?= e($__title) ?> · <?= e($__brand) ?></title>
 <link rel="stylesheet" href="<?= e(url('/assets/style.css')) ?>">
+<link rel="manifest" href="<?= e(url('/pwa/manifest.json')) ?>">
 </head>
 <body>
 <header class="topbar">
@@ -67,7 +68,9 @@ $activeIn = function(array $paths) use ($__path) {
             </details>
             <?php endif; ?>
 
+            <?php if ($isAdminOrInsp): ?>
             <a href="<?= e(url('/boats')) ?>" class="nav-link<?= $activeIn(['/boats'])?' active':'' ?>" data-testid="nav-boats">Barcos</a>
+            <?php endif; ?>
 
             <?php if ($isAdminOrInsp): ?>
             <details class="nav-drop<?= $activeIn(['/backups','/audit','/settings','/status'])?' active':'' ?>" data-testid="nav-sistema">
@@ -82,6 +85,7 @@ $activeIn = function(array $paths) use ($__path) {
             <?php endif; ?>
 
             <a href="<?= e(url('/account')) ?>" class="nav-link<?= $__path==='/account'?' active':'' ?>" data-testid="nav-account">Mi cuenta</a>
+            <a href="<?= e(url('/about')) ?>" class="nav-link<?= $__path==='/about'?' active':'' ?>" data-testid="nav-about">Acerca de</a>
 
             <form method="post" action="<?= e(url('/logout')) ?>" class="inline nav-logout">
                 <?= csrf_field() ?>
@@ -90,6 +94,11 @@ $activeIn = function(array $paths) use ($__path) {
         </nav>
 
         <div class="user-badge-wrap">
+            <?php if ($__path === '/home'): ?>
+                <button type="button" class="btn btn-primary btn-sm" id="pwa-install-button" data-pwa-url="<?= e(url('/pwa/')) ?>" data-testid="pwa-install-button">
+                    Instalar PWA
+                </button>
+            <?php endif; ?>
             <span class="user-badge" data-testid="topbar-user">
                 <?= e($__user['first_name'] . ' ' . $__user['last_name']) ?>
                 <em><?= e(role_label($__user['role'])) ?></em>
@@ -117,6 +126,7 @@ $activeIn = function(array $paths) use ($__path) {
 
 <footer class="footer"><small><?= e($__title) ?> · v<?= e(APP_VERSION) ?><?= $__company ? ' · '.e($__company) : '' ?></small></footer>
 
+<script src="<?= e(url('/assets/pwa-install.js')) ?>" defer></script>
 <script>
 // Cierra los desplegables del menú al hacer clic fuera.
 document.addEventListener('click', (e) => {

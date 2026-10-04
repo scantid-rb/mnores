@@ -1,10 +1,10 @@
 # Contrato API — Inventario de Repuestos
 
-**API_VERSION:** 1.4.4  
-**APP_VERSION del servidor:** 1.4.4  
+**API_VERSION:** 1.4.5  
+**APP_VERSION del servidor:** 1.4.5  
 **SCHEMA_VERSION:** 3  
 **Estado:** contrato de referencia para el cliente Android offline-first  
-**Última revisión:** 2026-09-28
+**Última revisión:** 2026-09-30
 
 Este documento define el contrato HTTP actualmente implementado por el servidor. La aplicación Android debe depender de este documento y no de detalles internos de PHP o SQLite.
 
@@ -57,8 +57,8 @@ Respuesta 200:
   "ok": true,
   "app_name": "Inventario de Repuestos",
   "app_title": "Repuestos a bordo",
-  "app_version": "1.4.4",
-  "api_version": "1.4.4",
+  "app_version": "1.4.5",
+  "api_version": "1.4.5",
   "installed": true
 }
 ```
@@ -113,6 +113,61 @@ Respuesta 200:
 }
 ```
 
+### 3.2.1 GET /api/account
+
+**Auth:** sí. Disponible para todos los roles.
+
+Devuelve los datos editables y de contexto del usuario autenticado:
+
+```json
+{
+  "ok": true,
+  "user": {
+    "id": 2,
+    "username": "Isidro",
+    "first_name": "Isidro",
+    "last_name": "Gonzalez",
+    "role": "chief_engineer",
+    "boat_id": 1,
+    "is_active": 1
+  }
+}
+```
+
+### 3.2.2 POST /api/account
+
+**Auth:** sí. **Content-Type:** `application/json`. Disponible para todos los roles.
+
+El usuario solo puede modificar su propia cuenta; el servidor obtiene la identidad del Bearer token. No se aceptan `id`, `role`, `boat_id`, `is_active` ni `is_primary_admin` como campos modificables.
+
+Acción `update_profile`:
+
+```json
+{
+  "action": "update_profile",
+  "username": "isidro",
+  "first_name": "Isidro",
+  "last_name": "Gonzalez"
+}
+```
+
+Validaciones: usuario de 1–40 caracteres limitado a letras, números, punto, guion y guion bajo; nombre obligatorio hasta 80 caracteres; apellidos obligatorios hasta 120; nombre de usuario único.
+
+Acción `change_password`:
+
+```json
+{
+  "action": "change_password",
+  "current_password": "actual",
+  "password": "nueva1234",
+  "password2": "nueva1234"
+}
+```
+
+La contraseña actual debe ser correcta, la nueva debe tener al menos 8 caracteres y ambas copias deben coincidir. Los cambios de perfil y contraseña generan auditoría.
+
+Errores principales: `400` JSON/acción inválida, `401` no autenticado, `422` validación.
+
 ### 3.3 GET /api/sync
 
 **Auth:** sí.
@@ -137,7 +192,7 @@ Respuesta:
 
 #### Boats
 
-Los barcos se entregan como **snapshot completo en cada llamada**, incluso con `since`. Esto es intencionado porque su borrado es físico y no existe un tombstone persistente.
+Los barcos se entregan como **snapshot completo en cada llamada**, incluso con `since`. Desde API 1.4.5 el borrado es lógico: las filas eliminadas conservan `deleted_at` como tombstones para preservar referencias históricas. `GET /api/boats` devuelve únicamente barcos activos/no eliminados, mientras `/api/sync` puede incluir tombstones.
 
 Campos:
 ```json
@@ -230,7 +285,7 @@ Campos:
 }
 ```
 
-Cuando solo se proporciona `quantity`, se modifica únicamente esa columna y `updated_at`. Es la modalidad destinada especialmente a `mechanic` y a los botones +/−.
+`quantity` debe ser un entero JSON no negativo. Cuando solo se proporciona `quantity`, se modifica únicamente esa columna y `updated_at`. Es la modalidad destinada especialmente a `mechanic` y a los botones +/−.
 
 #### Conflictos
 
@@ -357,7 +412,7 @@ Acciones:
 - `create`: `name`, `registration`, `is_active`.
 - `update`: `id`, `name`, `registration`, `is_active`.
 - `toggle`: `id`.
-- `delete`: solo `admin`; se rechaza si existen usuarios o piezas activas asociadas.
+- `delete`: solo `admin`; se rechaza si existen usuarios o piezas activas asociadas. En API 1.4.5 el borrado permitido es lógico (`deleted_at` + `is_active=0`) para conservar referencias históricas.
 
 Errores principales: `403`, `404`, `409`, `422`, `405`.
 
@@ -454,8 +509,8 @@ Respuesta 200:
 ```json
 {
   "ok": true,
-  "app_version": "1.4.4",
-  "api_version": "1.4.4",
+  "app_version": "1.4.5",
+  "api_version": "1.4.5",
   "schema_version": 3,
   "sqlite_integrity": "ok",
   "database_size_bytes": 123456,
@@ -575,6 +630,7 @@ Errores principales: `400`, `401`, `403`, `422`, `500`.
 | Operación | admin | inspector | chief_engineer | mechanic |
 |---|---:|---:|---:|---:|
 | Login / me / sync | ✓ | ✓ | ✓ | ✓ |
+| Editar perfil/cambiar contraseña propia | ✓ | ✓ | ✓ | ✓ |
 | Ver piezas | Todos | Todos | Su barco | Su barco |
 | Crear pieza | ✓ | ✓ | Su barco | — |
 | Editar campos | ✓ | ✓ | Su barco | — |
@@ -650,6 +706,8 @@ La versión Android (`APP_VERSION`) es independiente de `API_VERSION`.
 |---|---|---|---|
 | POST | `/api/login` | No | Token |
 | GET | `/api/me` | Sí | Identidad |
+| GET | `/api/account` | Sí | Perfil propio |
+| POST | `/api/account` | Sí | Editar perfil/cambiar contraseña propia |
 | GET | `/api/sync` | Sí | Sincronización |
 | POST | `/api/parts/push` | Sí | Cambios offline |
 | GET | `/api/photos/{id}` | Sí | Descargar foto |
@@ -669,4 +727,22 @@ La versión Android (`APP_VERSION`) es independiente de `API_VERSION`.
 | GET | `/api/backups/{name}/download` | Sí | Descargar backup |
 | POST | `/api/backups/restore-upload` | Sí | Restaurar ZIP local (admin) |
 
-**Fin del contrato API 1.4.4.**
+**Fin del contrato API 1.4.5.**
+
+
+## Validación y sincronización en la rama pwa
+
+Un update completo debe incluir `name`, `reference`, `category_id`, `location`,
+`quantity` y `notes`. Un update parcial de otros campos devuelve `invalid` y
+no modifica la pieza. `name` es una cadena no vacía (máximo 160 caracteres);
+`reference`, `location` y `notes` permiten null o cadenas de hasta 80, 120 y
+65535 caracteres, respectivamente. `category_id` debe ser un entero que
+identifique una categoría vigente. Una creación exige además un barco vigente
+y un `local_id` no vacío (máximo 200 bytes). Los reintentos de un create ya
+aplicado mantienen el mismo ID. Cada mutación y su auditoría se confirman
+en una transacción SQLite.
+
+Las fotografías de piezas borradas devuelven 404. El borrado conserva la fila
+como tombstone y limpia `photo_path`. El borrado físico de un barco con piezas
+(incluidos tombstones) devuelve 409; se puede desactivar el barco. Así se
+conservan las referencias requeridas por la sincronización incremental.

@@ -49,7 +49,7 @@ function api_user_validate(array $d, ?array $existing, array $allowedRoles): arr
     }
 
     if ($d['boat_id'] !== null) {
-        $q = db()->prepare('SELECT id FROM boats WHERE id=:id');
+        $q = db()->prepare('SELECT id FROM boats WHERE id=:id AND deleted_at IS NULL');
         $q->execute([':id'=>$d['boat_id']]);
         if (!$q->fetch()) $errors[] = 'Barco no válido.';
     }

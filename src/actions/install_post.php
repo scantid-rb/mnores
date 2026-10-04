@@ -9,11 +9,15 @@ if (is_installed()) {
     redirect('/');
 }
 
+$dataDirWritable = is_dir(DATA_DIR)
+    ? is_writable(DATA_DIR)
+    : is_writable(dirname(DATA_DIR));
+
 $checks = [
     'PHP 8.3 o superior'  => version_compare(PHP_VERSION, '8.3.0', '>='),
     'Extensión PDO'       => extension_loaded('PDO'),
     'Extensión pdo_sqlite'=> extension_loaded('pdo_sqlite'),
-    'Directorio de datos escribible' => is_writable(DATA_DIR),
+    'Directorio de datos escribible' => $dataDirWritable,
 ];
 
 $errors = [];
@@ -41,13 +45,13 @@ if ($errors) {
 }
 
 try {
-    if (!is_dir(DATA_DIR)) {
-        mkdir(DATA_DIR, 0755, true);
+    if (!is_dir(DATA_DIR) && !mkdir(DATA_DIR, 0755, true) && !is_dir(DATA_DIR)) {
+        throw new RuntimeException('No se pudo crear el directorio de datos.');
     }
+
     $pdo = db();
     db_init_schema($pdo);
 
-    // Comprobar que no existe ya un usuario (seguridad extra).
     $exists = (int)$pdo->query('SELECT COUNT(*) FROM users')->fetchColumn();
     if ($exists > 0) {
         $errors[] = 'Ya existen usuarios. La instalación no puede continuar.';
@@ -68,8 +72,9 @@ try {
         ':role' => 'admin',
     ]);
 
-    // Marcar instalación como completada.
-    file_put_contents(INSTALL_LOCK, date('c'));
+    if (file_put_contents(INSTALL_LOCK, date('c')) === false) {
+        throw new RuntimeException('No se pudo crear installed.lock.');
+    }
     @chmod(DB_FILE, 0640);
 
     $_SESSION['flash_success'] = 'Instalación completada. Inicia sesión con el administrador.';

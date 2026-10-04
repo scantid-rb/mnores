@@ -1,321 +1,670 @@
-# Inventario de Repuestos para Barcos — V1 - este es un proyecto personal, el objetivo de este git y las explicaciones es dejar un punto de partida para mis compañeros de trabajo el día que yo marche de la empresa u otra persona decida continuar donde quedo el proyecto
+# ShipInventory
 
-Aplicación web sencilla para gestionar el inventario de repuestos de una flota pequeña de barcos (~6 barcos, ~18 usuarios). Escrita en PHP 8.3 con SQLite. Sin frameworks JS, sin servicios externos, sin dependencias en la nube.
+ShipInventory es un proyecto de gestión de inventario de repuestos para una pequeña flota de buques. El repositorio contiene un backend web en PHP con base de datos SQLite, una API REST para clientes externos y una PWA instalable diseñada para seguir siendo útil cuando el dispositivo pierde temporalmente la conexión.
 
-## Estado actual del proyecto (léeme si vas a continuar este trabajo)
+El proyecto nació para cubrir una necesidad práctica: mantener un inventario común de repuestos, cantidades, ubicaciones, fotografías y movimientos asociados a distintos barcos, con permisos diferenciados por usuario y con capacidad de trabajar desde zonas con conectividad irregular.
 
-- **Producción real**: alojada en AwardSpace (hosting compartido gratuito).
-- **Entorno de desarrollo/pruebas**: subdominio separado `devmn.atwebpages.com`,
-  usado para probar cambios sin tocar el sitio en uso real. Se recomienda
-  seguir usándolo así para cualquier cambio futuro.
-- **AwardSpace no ofrece HTTPS** en el plan gratuito: toda la aplicación
-  (web y API) funciona por HTTP. Es una decisión consciente y documentada,
-  no un descuido — ver la sección "API para la app Android" más abajo para
-  el razonamiento.
-- **Estructura de despliegue real**: por cómo funciona AwardSpace (no se
-  puede fijar el `DocumentRoot` a una subcarpeta, ni hay nada accesible por
-  encima de la raíz web), esta instalación usa una variante de la
-  estructura "clásica" descrita más abajo: `index.php`, `.htaccess` y
-  `assets/` están directamente en la raíz web, con `src/`, `vendor/` y
-  `data/` como carpetas hermanas (cada una protegida con su propio
-  `.htaccess`), en vez de una carpeta `public/` como `DocumentRoot`. La
-  sección "Instalación" de este documento explica ambas variantes.
-- **Hay una API REST añadida** (`/api/...`) para dar servicio a una app
-  Android nativa en desarrollo (offline-first, hecha con Emergent). Ver la
-  sección dedicada más abajo y el archivo `api_contract_android.md`
-  (documento vivo con el contrato exacto de la API — actualizarlo si se
-  añaden/cambian endpoints).
+La rama `pwa` integra el backend tradicional y el cliente PWA dentro del mismo repositorio.
+
+---
+
+## Características principales
+
+- Gestión de repuestos por barco.
+- Categorías globales.
+- Ubicación, referencia, cantidad, notas y fotografía por repuesto.
+- Cantidad igual a cero permitida.
+- Fotografías redimensionadas manteniendo proporción.
+- Gestión de barcos y usuarios según permisos.
+- Auditoría de cambios.
+- Copias de seguridad de la base de datos y fotografías.
+- API REST versionada.
+- Cliente PWA instalable.
+- Funcionamiento offline-first en la PWA.
+- Cola local de operaciones pendientes.
+- Sincronización automática o manual cuando vuelve la conexión.
+- Persistencia local mediante IndexedDB.
+- Service Worker para funcionamiento sin conexión.
+- Compatibilidad con navegadores modernos de escritorio y móviles.
+- Interfaz adaptada a los distintos roles de usuario.
+
+---
+
+## Arquitectura general
+
+ShipInventory está dividido en tres capas principales:
+
+```text
+┌───────────────────────────────────────┐
+│                PWA                    │
+│  React / Expo Web / IndexedDB / SW    │
+└───────────────────┬───────────────────┘
+                    │ HTTPS
+                    │ API REST
+                    ▼
+┌───────────────────────────────────────┐
+│             Backend PHP               │
+│ autenticación · permisos · sync · API │
+└───────────────────┬───────────────────┘
+                    │
+                    ▼
+┌───────────────────────────────────────┐
+│                SQLite                 │
+│ inventario · usuarios · auditoría     │
+└───────────────────────────────────────┘
+```
+
+El backend es la fuente de verdad. La PWA mantiene una copia local del inventario y una cola de operaciones para poder seguir trabajando cuando no existe conexión con el servidor.
+
+Cuando la conexión vuelve a estar disponible, el cliente reconcilia los cambios locales con el servidor mediante la API.
+
+---
 
 ## Requisitos
 
-- Linux, macOS o Windows con:
-  - **PHP 8.3** o superior en línea de comandos
-  - Extensiones PHP: `pdo`, `pdo_sqlite`, `gd`, `zip`, `xml`, `mbstring`
-- **SQLite 3** (para consultas manuales, opcional)
-- **Composer** (solo para instalar PhpSpreadsheet la primera vez)
-- Cualquier servidor web capaz de ejecutar PHP:
-  - Servidor embebido de PHP (`php -S`) — suficiente para uso local a bordo
-  - Apache/Nginx tradicional con PHP-FPM (recomendado en hosting)
-- 100 MB libres iniciales (crece con las fotografías)
+### Servidor
 
-## Instalación
+- PHP 8.3 o superior.
+- PDO.
+- PDO SQLite.
+- GD.
+- mbstring.
+- ZIP.
+- XML.
+- Servidor web compatible con PHP.
+- Apache recomendado si se utiliza el archivo `.htaccess` incluido.
+- Permisos de escritura sobre el directorio `data/`.
 
-1. **Copiar el proyecto** a la máquina destino, por ejemplo `/var/www/inventario`.
-   - **Si el hosting permite fijar el `DocumentRoot`** a una subcarpeta (caso general, VPS/servidor propio): usar la estructura "clásica" con `public/` como raíz web (ver diagrama en "Estructura de carpetas").
-   - **Si el hosting NO lo permite** (hosting compartido gratuito típico, ej. AwardSpace — el caso de esta instalación): usar la variante plana, con `index.php`, `.htaccess` y `assets/` directamente en la raíz web, y `src/`, `vendor/`, `data/` como hermanas. En ese caso, dentro de `index.php` los `require` deben apuntar a `__DIR__.'/src/...'` en vez de `__DIR__.'/../src/...'`. Añadir además un `.htaccess` propio (vacío o con `Deny from all`) dentro de `src/` y `vendor/`, ya que en esta variante quedan dentro de la raíz web.
-2. **Instalar dependencias** (solo si `vendor/` no viene incluido):
-   ```bash
-   composer install --no-dev --optimize-autoloader
-   ```
-3. **Permisos**: la carpeta `data/` y sus subdirectorios (`photos/`, `backups/`) deben ser escribibles por el usuario del servidor web (`www-data`, `apache`, etc.):
-   ```bash
-   chown -R www-data:www-data data/
-   chmod 750 data/ data/photos data/backups
-   ```
-4. **Configurar el servidor web**:
-   - **Servidor embebido (rápido para probar):**
-     ```bash
-     cd /var/www/inventario
-     php -S 0.0.0.0:8080 -t public/ router.php
-     ```
-   - **Apache**: apuntar `DocumentRoot` a `public/`. El `.htaccess` incluido en `data/` bloquea el acceso HTTP a la BD y a las fotografías.
-   - **Nginx**: apuntar `root` a `public/` y usar `try_files $uri /index.php;`. Denegar `location ~ ^/(data|src|vendor)/`.
-   - **Hosting compartido sin DocumentRoot configurable** (variante plana, ver paso 1): el `.htaccess` de la raíz debe reescribir todo hacia `index.php`:
-     ```apache
-     RewriteEngine On
-     RewriteCond %{HTTP:Authorization} .
-     RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
-     RewriteCond %{REQUEST_FILENAME} !-f
-     RewriteCond %{REQUEST_FILENAME} !-d
-     RewriteRule ^ index.php [L]
-     ```
-     La línea de `Authorization` es necesaria para que la API (ver más abajo) reciba el carnet de acceso del móvil; algunos hostings PHP-CGI la ocultan si no se fuerza así.
-5. **Abrir la aplicación en el navegador**. Al ser primera ejecución mostrará **CONFIGURACIÓN INICIAL → Nueva instalación**. Rellenar el formulario para crear el primer administrador. Se marcará como “administrador principal” (no podrá ser eliminado ni desactivado).
-6. **Iniciar sesión** con las credenciales creadas.
+Composer se utiliza para las dependencias PHP incluidas en `vendor/`.
 
-### Ruta base / subdirectorio
+### PWA
 
-Si la aplicación se aloja en `https://ejemplo.com/inventario/` en lugar de la raíz, editar `src/config.php` y cambiar:
+Para desarrollar o reconstruir la PWA:
 
-```php
-$BASE_PATH = '/inventario';
+- Node.js 22 o superior.
+- Yarn 1.22.x.
+- Navegador moderno con soporte para:
+  - Service Workers.
+  - IndexedDB.
+  - Fetch API.
+  - Cache API.
+
+---
+
+# HTTPS es obligatorio en producción
+
+> **La PWA debe desplegarse mediante HTTPS.**
+
+Esto no es opcional para un despliegue normal en producción.
+
+Los navegadores solo habilitan determinadas funciones necesarias para una PWA dentro de un **contexto seguro**. Entre ellas se encuentra el Service Worker utilizado por ShipInventory para almacenar la aplicación y permitir su apertura sin conexión.
+
+`localhost` constituye una excepción durante el desarrollo y puede utilizar HTTP.
+
+En producción debe utilizarse:
+
+```text
+https://servidor.example.com/
 ```
 
-Debe empezar por `/` y **no** terminar en `/`. Cadena vacía = dominio raíz.
+y no:
 
-## Configuración
-
-Menú **Configuración** (Administrador/Inspector). Se guardan los valores:
-
-| Clave                  | Descripción                                 | Valor inicial |
-|------------------------|---------------------------------------------|---------------|
-| `app_name`             | Nombre de la aplicación (título HTML)       | Inventario de Repuestos |
-| `app_title`            | Marca visible en la cabecera                | Repuestos a bordo |
-| `company_name`         | Empresa/organización (opcional)             | *(vacío)*     |
-| `backup_interval_days` | Intervalo del backup automático (días)      | 7             |
-| `backup_retention_days`| Retención de backups de seguridad (días)    | 7             |
-| `audit_retention_days` | Conservación de registros de auditoría (d)  | 90            |
-| `disk_warning_percent` | Umbral para aviso de poco espacio (%)       | 20            |
-
-Los cambios se aplican inmediatamente en la siguiente petición.
-
-## API para la app Android (offline)
-
-**Contrato:** API 1.4.4  
-**Servidor:** APP_VERSION 1.4.4  
-**Esquema:** SCHEMA_VERSION 3  
-**Contrato completo:** `api_contract_android.md`
-
-El servidor expone una API REST destinada al cliente Android offline-first. El contrato completo define rutas, métodos, autenticación, permisos, sincronización, conflictos, idempotencia, fotografías, usuarios, barcos, categorías y auditoría.
-
-### Rutas disponibles
-
-| Método | Endpoint | Función |
-|---|---|---|
-| POST | `/api/login` | Obtener token |
-| GET | `/api/me` | Validar token e identidad |
-| GET | `/api/sync` | Sincronización completa/incremental |
-| POST | `/api/parts/push` | Subir cambios offline de piezas |
-| GET/POST | `/api/photos/{id}` | Descargar/subir fotografía |
-| GET/POST | `/api/boats` | Consultar/gestionar barcos |
-| GET/POST | `/api/categories` | Consultar/gestionar categorías |
-| GET/POST | `/api/users` | Consultar/gestionar usuarios |
-| GET | `/api/audit` | Consultar auditoría (admin/inspector) |
-
-### Versionado
-
-El servidor mantiene tres versiones independientes:
-
-- **APP_VERSION 1.4.4:** versión del servidor.
-- **API_VERSION 1.4.4:** contrato que debe soportar el cliente.
-- **SCHEMA_VERSION 3:** versión del esquema SQLite.
-
-La aplicación Android candidata actual utiliza **APP_VERSION 0.1.2** y **API_VERSION 1.4.4**. La versión Android no forma parte del versionado del servidor.
-
-### Sincronización
-
-- Primera carga: `GET /api/sync`.
-- Siguientes cargas: `GET /api/sync?since=<último server_time>`.
-- El servidor captura el cursor antes de leer los datos.
-- Las piezas eliminadas se conservan como tombstones.
-- Las altas offline utilizan `local_id` para evitar duplicados.
-- `POST /api/parts/push` admite updates completos y updates parciales de cantidad.
-- Las fotos se sincronizan separadamente mediante `/api/photos/{id}`.
-
-**Importante:** los permisos se aplican siempre en el servidor. La interfaz Android puede ocultar acciones no permitidas, pero no sustituye la autorización backend.
-
-Para modificar la API en el futuro, actualizar primero `api_contract_android.md` y evaluar si el cambio requiere incrementar `API_VERSION`.
-
-## Estructura de carpetas
-
-La rama actual usa la **variante plana de despliegue** porque el hosting de
-producción (AwardSpace) no permite fijar el `DocumentRoot` a `public/`.
-Por tanto, **no existe una carpeta `public/` en el repositorio actual**:
-el front controller y los recursos públicos están en la raíz.
-
-La estructura relevante de la aplicación es:
-
+```text
+http://servidor.example.com/
 ```
+
+También debe evitarse una configuración donde la PWA se sirva mediante HTTPS pero la API utilice HTTP, ya que los navegadores modernos bloquearán esas solicitudes como contenido mixto.
+
+Por tanto:
+
+```text
+PWA  -> HTTPS
+API  -> HTTPS
+```
+
+Ambas deben encontrarse disponibles mediante una conexión segura.
+
+---
+
+# Estructura del proyecto
+
+El proyecto utiliza actualmente una **estructura plana**.
+
+No se presupone una carpeta `public/` como DocumentRoot. Los archivos públicos, el front controller PHP y los directorios internos conviven bajo la misma raíz del proyecto.
+
+Las áreas que no deben quedar accesibles directamente desde Internet se protegen mediante reglas de Apache y archivos `.htaccess`.
+
+Una estructura simplificada es:
+
+```text
 mnores/
-├── index.php                    # Front controller web/API
-├── router.php                  # Router para `php -S`
-├── .htaccess                   # Reglas de reescritura y cabeceras
+│
+├── index.php
+├── router.php
+├── .htaccess
+│
 ├── assets/
-│   └── style.css               # CSS de la aplicación
+│
 ├── src/
-│   ├── .htaccess               # Bloqueo de acceso directo
-│   ├── config.php              # Versiones, BASE_PATH y configuración básica
-│   ├── bootstrap.php           # Inicialización, sesión y mantenimiento
-│   ├── db.php                  # SQLite, esquema y migraciones
-│   ├── auth.php                # Autenticación y permisos
-│   ├── api_auth.php            # Autenticación por token de la API
-│   ├── csrf.php                # Protección CSRF
-│   ├── audit.php               # Registro de auditoría
-│   ├── settings.php            # Configuración dinámica
-│   ├── photos.php              # Procesado de fotografías
-│   ├── backup.php              # Backups y restauración
-│   ├── parts_util.php          # Utilidades del inventario
-│   ├── helpers.php             # Funciones auxiliares
-│   ├── actions/                # Controladores web y endpoints API
-│   │   ├── api_login.php
-│   │   ├── api_me.php
-│   │   ├── api_sync.php
-│   │   ├── api_parts_push.php
-│   │   ├── api_photos.php
-│   │   ├── api_boats.php
-│   │   ├── api_categories.php
-│   │   ├── api_users.php
-│   │   ├── api_audit.php
-│   │   └── ...                 # Resto de acciones web
-│   └── views/                  # Plantillas HTML
-│       ├── audit/
-│       ├── backups/
-│       ├── boats/
-│       ├── categories/
-│       ├── parts/
-│       ├── settings/
-│       ├── status/
-│       ├── users/
-│       └── ...                 # Vistas simples en archivos .php
-├── data/                       # Datos persistentes; no debe exponerse por HTTP
 │   ├── .htaccess
-│   ├── app.sqlite              # Base de datos
-│   ├── installed.lock          # Marcador de instalación
-│   ├── photos/                 # Fotografías almacenadas
-│   └── backups/                # Backups
-├── vendor/                     # Dependencias de Composer
+│   ├── actions/
+│   ├── views/
+│   ├── auth.php
+│   ├── api_auth.php
+│   ├── audit.php
+│   ├── backup.php
+│   ├── bootstrap.php
+│   ├── config.php
+│   ├── csrf.php
+│   ├── db.php
+│   ├── helpers.php
+│   ├── parts_util.php
+│   ├── photos.php
+│   └── settings.php
+│
+├── data/
+│   ├── .htaccess
+│   ├── app.sqlite
+│   ├── photos/
+│   └── backups/
+│
+├── vendor/
+│
+├── frontend/
+│
+├── pwa/
+│   ├── index.html
+│   ├── sw.js
+│   └── assets/
+│
 ├── composer.json
 ├── composer.lock
-├── manifest.json
+├── api_contract_android.md
 ├── CHANGELOG.md
-├── api_contract_android.md     # Contrato de la API Android
+├── LICENSE
 └── README.md
 ```
 
-### Variantes de despliegue
+## `index.php`
 
-- **Producción actual / hosting sin `DocumentRoot` configurable:** usar
-  exactamente la estructura plana anterior.
-- **Servidor propio con `DocumentRoot` configurable:** el proyecto puede
-  adaptarse para exponer solo un directorio público, pero esa **no es la
-  estructura que existe actualmente en esta rama** y no debe asumirse al
-  hacer despliegues desde Git.
+Es el front controller principal del backend.
 
-Los directorios `data/` y `vendor/` contienen datos/dependencias y no forman
-parte de la superficie pública de la aplicación. En la variante plana,
-`src/` y `vendor/` están protegidos mediante `.htaccess`.
-## Creación de backup
+Las solicitudes que no corresponden a un archivo o directorio físico son redirigidas hacia este archivo mediante `.htaccess`.
 
-- **Manual**: menú *Backups → “Crear backup manual”*. El ZIP se nombra `backup_manual_YYYY-MM-DD_HHMM.zip` y se guarda en `data/backups/`.
-- **Automático**: se ejecuta cada `backup_interval_days` días al recibir una petición dinámica (nunca durante descargas de fotos, exportaciones o assets estáticos). Aparece un mensaje _“Realizando mantenimiento del sistema, por favor espere…”_ si otro proceso ya está ejecutándolo y, al terminar, _“El mantenimiento automático ha concluido. Ya puede utilizar la aplicación.”_ Los fallos se registran en `data/backups/.autobackup.fail` y en `audit_log`.
-- **Descargar/eliminar**: desde la misma pantalla, listados por tipo (Manual, Automático, Seguridad).
+## `src/`
 
-### Contenido del ZIP
+Contiene la mayor parte de la lógica PHP:
 
+- autenticación;
+- autorización;
+- acceso a SQLite;
+- auditoría;
+- configuración;
+- tratamiento de fotografías;
+- backups;
+- acciones web;
+- endpoints de API;
+- vistas HTML.
+
+El acceso web directo a este directorio debe permanecer bloqueado.
+
+## `data/`
+
+Contiene datos persistentes de la instalación:
+
+- base de datos SQLite;
+- fotografías;
+- backups;
+- ficheros internos de estado.
+
+**Este directorio no debe ser accesible directamente desde Internet.**
+
+El archivo `.htaccess` incluido forma parte de la protección de estos datos.
+
+## `vendor/`
+
+Contiene dependencias PHP instaladas mediante Composer.
+
+No debe utilizarse como directorio público.
+
+## `frontend/`
+
+Contiene el código fuente de la PWA.
+
+Está basado en Expo/React para web y contiene la lógica de interfaz, persistencia offline y sincronización.
+
+## `pwa/`
+
+Contiene la build web lista para ser servida.
+
+La instalación habitual mantiene el backend en la raíz y la aplicación PWA en:
+
+```text
+/pwa/
 ```
-database.sqlite
-photos/<id>.jpg
-manifest.json  ← app_version, schema_version, created_at_utc, sqlite_sha256, photos_expected, photos_included
+
+Por ejemplo:
+
+```text
+https://example.com/pwa/
 ```
 
-## Restauración
+mientras la API continúa disponible en:
 
-Menú *Backups → Restaurar* (solo Administrador). El proceso:
+```text
+https://example.com/api/...
+```
 
-1. Verifica el ZIP (firma, `manifest.json`, `sqlite_sha256`, `PRAGMA integrity_check`, tablas mínimas, `schema_version ≤ actual`).
-2. Pide confirmación.
-3. Crea automáticamente un backup de seguridad del estado actual (`backup_seguridad_YYYY-MM-DD_HHMM.zip`).
-4. Sustituye `data/app.sqlite` y `data/photos/`.
-5. Vuelve a comprobar `PRAGMA integrity_check`.
-6. Si algo falla, se intenta revertir al backup de seguridad. Si la reversión también falla, se muestra un error inequívoco al Administrador.
-7. Cierra la sesión actual y redirige a `/login` (se debe iniciar sesión con las credenciales de la BD restaurada).
+---
 
-## Actualización manual
+# Protección mediante .htaccess
 
-1. Detener el servidor web / `php -S`.
-2. Sustituir los archivos de `public/`, `src/`, `router.php`, `composer.json` por los de la versión nueva. **No tocar** `data/` ni `vendor/` a menos que la versión nueva lo pida explícitamente.
-3. Si cambian dependencias:
-   ```bash
-   composer install --no-dev --optimize-autoloader
-   ```
-4. Reiniciar el servidor. La aplicación aplicará automáticamente cualquier migración de esquema al primer acceso.
-5. Comprobar en *Estado* que `Versión aplicación`, `Versión esquema` y `SQLite integrity_check` son correctos.
+La estructura plana implica que existen directorios internos físicamente situados bajo la raíz web.
 
-## Solución de problemas habituales
+Por este motivo las reglas `.htaccess` forman parte de la seguridad de la instalación y no deben eliminarse sin sustituirlas por reglas equivalentes en el servidor web.
 
-**“ERR_TOO_MANY_REDIRECTS” o bucle a `/install`**
-- Falta el fichero `data/installed.lock`. Si la instalación se completó, crearlo manualmente con `date > data/installed.lock`.
+El archivo `.htaccess` de la raíz realiza actualmente tres funciones importantes.
 
-**Errores 500 o pantalla en blanco**
-- Revisar `error_log` del servidor (Apache/Nginx) o `stderr` de `php -S`.
-- Comprobar permisos: `data/` debe ser escribible por PHP.
-- Ejecutar `php -l src/bootstrap.php` para validar sintaxis tras un cambio.
+## 1. Conservación de la cabecera Authorization
 
-**No se puede subir fotografía**
-- Comprobar que `php.ini` permite subidas de al menos 8 MB (`upload_max_filesize`, `post_max_size`).
-- Extensión `gd` habilitada (`php -m | grep -i gd`).
+Algunos entornos PHP ejecutados mediante CGI/FastCGI no entregan automáticamente la cabecera HTTP `Authorization` a PHP.
 
-**Auto-backup no se ejecuta**
-- Precisa un usuario autenticado navegando por rutas dinámicas. Si nadie entra durante el intervalo configurado, el siguiente acceso lo desencadenará.
-- Revisar `data/backups/.autobackup.fail` para el último error.
+ShipInventory la necesita para la autenticación de la API.
 
-**Restauración fallida**
-- La aplicación intenta revertir al backup de seguridad. Si la reversión también falla, existe un ZIP en `data/backups/backup_seguridad_*.zip` que se puede aplicar manualmente:
-  ```bash
-  unzip -o backup_seguridad_YYYY-MM-DD_HHMM.zip -d /tmp/rest
-  cp /tmp/rest/database.sqlite data/app.sqlite
-  cp /tmp/rest/photos/*.jpg data/photos/ 2>/dev/null || true
-  ```
+La configuración conserva explícitamente esta cabecera para que los tokens enviados por los clientes lleguen correctamente al backend.
 
-**Baja el rendimiento con muchos accesos concurrentes**
-- Este proyecto está pensado para 3–20 usuarios. Si se supera, usar Apache/Nginx + PHP-FPM en lugar del servidor embebido.
+## 2. Enrutamiento de la PWA
 
-## Seguridad implementada
+Las rutas internas de la PWA deben poder resolverse aunque no correspondan a archivos físicos.
 
-- Prepared statements (PDO) en todas las consultas.
-- Escape con `htmlspecialchars` en todas las plantillas.
-- Validación de entrada por longitud y patrón.
-- Autorización backend en cada acción (403 al saltarse un permiso).
-- CSRF token en todas las operaciones que modifican datos (POST).
-- Contraseñas con `password_hash` (bcrypt), mínimo 8 caracteres.
-- Sesiones con cookie `HttpOnly` + `SameSite=Lax`; `Secure` automático si la petición llega por HTTPS.
-- Protección de fuerza bruta: 10 fallos por IP+usuario → bloqueo 5 min.
-- SQLite y fotografías fuera del `DocumentRoot`; `.htaccess` con `Deny from all` y `php_flag engine off`.
-- Uploads: validados con `getimagesize()` + `imagecreatefrom*` (rechaza contenido falso). Máximo 8 MB. Reescritos siempre como JPEG con redimensión a 1600×1200.
-- Cabeceras HTTP: `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin`, `Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; ...`.
+Por ejemplo:
 
-## Portabilidad
+```text
+/pwa/inventory
+/pwa/part/123
+```
 
-- No hay rutas absolutas en el código: todas se construyen con `url()` sobre `BASE_PATH`.
-- Funciona en HTTP puro; usa HTTPS si el proxy o servidor lo termina (ver nota sobre HTTPS en "API para la app Android").
-- Sin dependencia de Emergent ni de servicios en la nube para la aplicación web (Emergent solo se usa para construir la app Android cliente, que consume la API descrita arriba).
-- Todos los datos residen en `data/`. Copiar esa carpeta = migrar la aplicación. Los tokens de la app Android viajan dentro de la base de datos, así que siguen siendo válidos tras migrar — solo hay que cambiar la URL del servidor en los "Ajustes de conexión" de la app.
+deben cargar la aplicación PWA y dejar que el router del cliente interprete la ruta.
 
-## Licencia y créditos
+Las reglas actuales redirigen estas rutas hacia:
 
-Aplicación desarrollada como proyecto interno para gestión de repuestos de barcos. Dependencia externa: [PhpSpreadsheet](https://phpspreadsheet.readthedocs.io/) (MIT).
+```text
+/pwa/index.html
+```
 
+si la build de la PWA está presente.
 
-## Despliegue automático
+## 3. Front controller PHP
 
-Para la instalación actual en hosting compartido se dispone de un método de despliegue mediante deploy.php y despliegue.zip. Las instrucciones completas están en README_DEPLOY.md. El instalador descomprime el paquete en un directorio temporal, protege la carpeta data/ y, únicamente si el despliegue termina correctamente, elimina automáticamente deploy.php y despliegue.zip.
+Las solicitudes que no corresponden a archivos o directorios reales terminan en:
+
+```text
+index.php
+```
+
+Esto permite mantener las rutas de la aplicación web y de la API sin necesidad de crear archivos PHP públicos para cada endpoint.
+
+---
+
+# PWA y funcionamiento offline
+
+La PWA está diseñada para escenarios donde la conexión puede desaparecer durante periodos de tiempo.
+
+El navegador mantiene localmente:
+
+- inventario sincronizado;
+- información necesaria para la sesión;
+- cambios pendientes;
+- fotografías pendientes;
+- metadatos de sincronización.
+
+Los datos se almacenan principalmente mediante IndexedDB.
+
+El Service Worker almacena los recursos estáticos necesarios para volver a abrir la aplicación sin conexión.
+
+## Flujo típico
+
+```text
+Usuario conectado
+      │
+      ▼
+Sincronización inicial
+      │
+      ▼
+Inventario almacenado localmente
+      │
+      ▼
+Se pierde la conexión
+      │
+      ▼
+Crear / editar / borrar repuestos
+      │
+      ▼
+Operaciones guardadas en cola
+      │
+      ▼
+Vuelve la conexión
+      │
+      ▼
+Sincronización
+      │
+      ▼
+Servidor actualizado
+```
+
+La primera autenticación y la primera descarga de datos requieren acceso al servidor.
+
+Una vez inicializada correctamente, la aplicación puede continuar trabajando temporalmente con los datos almacenados en el dispositivo.
+
+---
+
+# Sincronización
+
+La API utiliza sincronización incremental.
+
+Las operaciones principales incluyen:
+
+- descarga inicial del inventario;
+- sincronización mediante cursor;
+- creación offline;
+- edición offline;
+- borrado lógico;
+- subida independiente de fotografías.
+
+Los registros eliminados permanecen temporalmente como tombstones para permitir que otros clientes conozcan el borrado durante la sincronización.
+
+Las creaciones offline utilizan identificadores locales para evitar duplicados si una petición se reintenta después de una conexión incierta.
+
+La lógica de permisos siempre se aplica nuevamente en el servidor. Ocultar una acción en la interfaz no sustituye la autorización del backend.
+
+---
+
+# API
+
+La API actual utiliza el contrato:
+
+```text
+API_VERSION = 1.4.5
+```
+
+El contrato completo se documenta en:
+
+```text
+api_contract_android.md
+```
+
+Entre los endpoints principales se encuentran:
+
+| Método | Endpoint | Función |
+|---|---|---|
+| POST | `/api/login` | Autenticación |
+| GET | `/api/me` | Identidad y sesión |
+| GET | `/api/handshake` | Compatibilidad cliente/servidor |
+| GET | `/api/sync` | Sincronización |
+| POST | `/api/parts/push` | Envío de cambios locales |
+| GET/POST | `/api/photos/{id}` | Fotografías |
+| GET/POST | `/api/boats` | Barcos |
+| GET/POST | `/api/categories` | Categorías |
+| GET/POST | `/api/users` | Usuarios |
+| GET | `/api/audit` | Auditoría |
+| POST | `/api/account` | Gestión de la cuenta propia |
+
+Antes de realizar cambios incompatibles en la API debe revisarse el contrato y decidir si es necesario incrementar `API_VERSION`.
+
+---
+
+# Roles y permisos
+
+ShipInventory utiliza varios niveles de acceso.
+
+## Administrador
+
+Puede administrar globalmente:
+
+- inventario;
+- barcos;
+- usuarios;
+- categorías;
+- auditoría;
+- configuración;
+- backups.
+
+## Inspector
+
+Tiene acceso global al inventario y a funciones de supervisión según los permisos definidos por el backend.
+
+## Jefe de Máquinas
+
+Opera sobre el barco que tiene asignado.
+
+Puede gestionar el inventario de ese barco y administrar los usuarios mecánicos correspondientes a su propio barco.
+
+No dispone de administración global de barcos.
+
+## Mecánico
+
+Opera sobre el inventario del barco al que pertenece dentro de los permisos concedidos por el backend.
+
+No dispone de acceso a la administración global.
+
+---
+
+# Fotografías
+
+Los repuestos pueden incluir una fotografía.
+
+La aplicación procesa las imágenes antes de almacenarlas para evitar mantener fotografías innecesariamente grandes.
+
+Las imágenes conservan su relación de aspecto y no deben recortarse automáticamente para ajustarse a un tamaño fijo.
+
+En la PWA las fotografías pendientes también forman parte del proceso de sincronización offline.
+
+---
+
+# Base de datos
+
+El backend utiliza SQLite.
+
+Esta elección simplifica la instalación y el mantenimiento de una aplicación de tamaño pequeño o medio sin requerir un servidor de base de datos independiente.
+
+La base de datos se encuentra dentro de:
+
+```text
+data/
+```
+
+y nunca debe exponerse como archivo descargable mediante HTTP.
+
+El backend se encarga de crear y migrar el esquema necesario.
+
+---
+
+# Backups
+
+ShipInventory dispone de mecanismos para generar copias de seguridad que pueden incluir:
+
+- base de datos SQLite;
+- fotografías;
+- metadatos de la copia.
+
+Las copias de seguridad deben tratarse como datos sensibles, ya que pueden contener una copia completa del inventario y de otros datos de la instalación.
+
+El directorio de backups debe permanecer protegido frente al acceso HTTP directo.
+
+---
+
+# Desarrollo de la PWA
+
+Desde:
+
+```bash
+cd frontend
+```
+
+instalar dependencias:
+
+```bash
+yarn install --frozen-lockfile
+```
+
+Las comprobaciones disponibles pueden incluir:
+
+```bash
+yarn typecheck
+yarn lint
+yarn test
+yarn test:api
+```
+
+Para generar la PWA destinada a funcionar bajo `/pwa/`:
+
+```bash
+PWA_BASE_PATH=/pwa yarn build:pwa
+```
+
+La salida final se genera en:
+
+```text
+pwa/
+```
+
+El valor de `PWA_BASE_PATH` debe coincidir con la ruta pública real donde se sirva la aplicación.
+
+---
+
+# Pruebas recomendadas
+
+Antes de considerar estable una versión se recomienda verificar como mínimo:
+
+### Online
+
+- inicio de sesión;
+- cierre de sesión;
+- handshake;
+- descarga del inventario;
+- creación de repuestos;
+- edición;
+- eliminación;
+- fotografías;
+- cambio de perfil;
+- cambio de contraseña;
+- permisos por rol.
+
+### Offline
+
+- abrir la aplicación ya inicializada sin conexión;
+- consultar inventario;
+- crear un repuesto;
+- modificar un repuesto;
+- borrar un repuesto;
+- adjuntar una fotografía;
+- cerrar y volver a abrir la PWA;
+- comprobar que las operaciones siguen en cola;
+- recuperar conexión;
+- sincronizar;
+- verificar el resultado en el servidor.
+
+### Actualización de la PWA
+
+También se recomienda probar:
+
+- instalación limpia;
+- actualización desde una build anterior;
+- actualización interrumpida;
+- navegación directa a una ruta interna;
+- funcionamiento en Chrome/Android;
+- funcionamiento en Safari/iPhone.
+
+---
+
+# Consideraciones de seguridad
+
+ShipInventory contiene información operacional y por ello debe desplegarse aplicando medidas básicas de seguridad.
+
+Como mínimo:
+
+- utilizar HTTPS;
+- mantener PHP actualizado;
+- proteger `data/`, `src/` y cualquier otro directorio interno;
+- no exponer SQLite;
+- no exponer backups;
+- conservar las reglas `.htaccess` o implementar equivalentes;
+- utilizar contraseñas adecuadas;
+- revisar permisos de archivos y directorios;
+- mantener las dependencias actualizadas;
+- limitar el acceso administrativo únicamente a quien lo necesite;
+- realizar copias de seguridad periódicas.
+
+Si el proyecto se despliega detrás de Nginx, Caddy u otro servidor distinto de Apache, las protecciones proporcionadas por `.htaccess` **no se aplicarán automáticamente** y deberán implementarse mediante reglas equivalentes del servidor utilizado.
+
+---
+
+# Disclaimer
+
+ShipInventory es un proyecto de software proporcionado como herramienta de gestión de inventario.
+
+El software se entrega **tal cual**, sin garantías de disponibilidad, integridad de datos, adecuación a un propósito concreto ni funcionamiento ininterrumpido.
+
+El usuario o administrador que despliegue este proyecto es responsable de:
+
+- verificar la configuración de seguridad del servidor;
+- utilizar HTTPS;
+- proteger la base de datos, fotografías y backups;
+- configurar correctamente permisos y autenticación;
+- validar el software antes de utilizarlo en un entorno real;
+- realizar y comprobar copias de seguridad;
+- evaluar cualquier requisito legal, contractual, de privacidad o de protección de datos aplicable a su instalación;
+- comprobar que la información del inventario es correcta antes de utilizarla para tomar decisiones operativas.
+
+El proyecto no debe considerarse un sistema de seguridad marítima, navegación, mantenimiento predictivo, clasificación, certificación o gestión de emergencias.
+
+La información almacenada en ShipInventory no sustituye los procedimientos oficiales de mantenimiento, documentación técnica del fabricante, sistemas reglamentarios, inspecciones, certificados ni decisiones de personal cualificado.
+
+Los autores y colaboradores no asumen responsabilidad por pérdida de datos, interrupciones de servicio, configuraciones inseguras, errores de inventario, fallos derivados de modificaciones de terceros ni daños directos o indirectos derivados del uso del software.
+
+---
+
+# Licencia
+
+ShipInventory se distribuye bajo la **MIT License**.
+
+Copyright (c) 2026 José Isidro González
+
+La licencia permite, entre otras cosas:
+
+- usar el software;
+- copiarlo;
+- modificarlo;
+- fusionarlo;
+- publicarlo;
+- distribuirlo;
+- sublicenciarlo;
+- vender copias.
+
+Siempre que se conserve el aviso de copyright y el texto de la licencia.
+
+El software se proporciona **"AS IS"**, sin garantía de ningún tipo.
+
+El texto legal completo se encuentra en:
+
+```text
+LICENSE
+```
+
+---
+
+# Continuidad del proyecto
+
+El repositorio pretende ser suficientemente comprensible para que otra persona pueda mantener o continuar el proyecto en el futuro.
+
+Antes de realizar cambios importantes es recomendable revisar:
+
+- `README.md`;
+- `CHANGELOG.md`;
+- `api_contract_android.md`;
+- `frontend/README_PWA.md`;
+- esquema y migraciones de SQLite;
+- reglas `.htaccess`;
+- comportamiento de sincronización offline.
+
+Los cambios que afecten al contrato entre clientes y servidor deben mantenerse coordinados para evitar incompatibilidades entre versiones.

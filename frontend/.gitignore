@@ -1,0 +1,10 @@
+
+# Web development
+node_modules/
+.metro-cache/
+
+# Expo generated
+expo-env.d.ts
+
+.expo/
+dist/

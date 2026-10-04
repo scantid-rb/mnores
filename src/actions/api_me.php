@@ -1,25 +1,18 @@
 <?php
 declare(strict_types=1);
 
-/**
- * src/actions/api_me.php
- * ------------------------
- * Ruta: GET /api/me
- * Endpoint de PRUEBA. Solo sirve para comprobar que el carnet de
- * acceso (token) funciona. Si el carnet es válido, dice quién eres.
- * Si no, rechaza la petición.
- */
-
 header('Content-Type: application/json; charset=utf-8');
 
-$user = api_require_auth(); // si el token no es válido, esto ya corta y responde 401
+$user = api_require_auth();
 
 echo json_encode([
-    'ok'   => true,
+    'ok' => true,
     'user' => [
-        'id'       => (int)$user['id'],
+        'id' => (int)$user['id'],
         'username' => $user['username'],
-        'role'     => $user['role'],
-        'boat_id'  => $user['boat_id'],
+        'first_name' => $user['first_name'],
+        'last_name' => $user['last_name'],
+        'role' => $user['role'],
+        'boat_id' => $user['boat_id'] !== null ? (int)$user['boat_id'] : null,
     ],
 ]);
