@@ -298,10 +298,10 @@ function backup_create_app(): array {
         // NOTA: estructura adaptada para hosting sin acceso por encima del docroot
         // (ej. AwardSpace): index.php, .htaccess y assets/ viven en APP_ROOT
         // en vez de dentro de una carpeta 'public/'.
-        foreach (['assets','src','vendor'] as $dir) {
+        foreach (['assets','src','vendor','pwa'] as $dir) {
             if (is_dir(APP_ROOT . '/' . $dir)) $addDir(APP_ROOT . '/' . $dir, $dir);
         }
-        foreach (['index.php','.htaccess','router.php','composer.json','composer.lock','README.md','README_DEPLOY.md'] as $f) {
+        foreach (['index.php','.htaccess','router.php','composer.json','composer.lock','README.md','LICENSE'] as $f) {
             if (is_file(APP_ROOT . '/' . $f)) $zip->addFile(APP_ROOT . '/' . $f, $f);
         }
         // Estructura mínima de directorios de datos (vacíos) para que el instalador pueda crear todo.
@@ -325,6 +325,9 @@ function backup_create_app(): array {
             'sqlite_sha256'   => $sha,
             'photos_expected' => $photos_expected,
             'photos_included' => $photos_included,
+            'pwa_included'       => is_dir(APP_ROOT . '/pwa'),
+            'pwa_version'        => '0.1.1',
+            'api_version'        => API_VERSION,
         ];
         $zip->addFromString('manifest.json', json_encode($manifest, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
 
@@ -364,6 +367,7 @@ Estructura resultante:
 ├── assets/         CSS y estáticos públicos
 ├── src/            código PHP (bloqueado por .htaccess a peticiones HTTP)
 ├── vendor/         dependencias Composer (ya incluidas, bloqueado por .htaccess)
+├── pwa/            cliente PWA compilado listo para servir en /pwa/
 ├── data/           BD y fotos actuales (ver punto 5)
 ├── composer.json / composer.lock
 ├── README.md
@@ -375,7 +379,8 @@ Estructura resultante:
 DocumentRoot en una subcarpeta ni acceder a un nivel por encima de la raíz web
 (caso típico de hosting compartido/gratuito, ej. AwardSpace). `index.php`,
 `.htaccess` y `assets/` van directamente en la raíz web, junto a `src/` y
-`vendor/` (protegidos de acceso HTTP con su propio `.htaccess`). Si tu
+`vendor/` (protegidos de acceso HTTP con su propio `.htaccess`) y `pwa/` como
+cliente web instalable. Si tu
 servidor sí permite un DocumentRoot separado, puedes adaptarlo a la
 estructura clásica con carpeta `public/` moviendo estos mismos archivos ahí
 y ajustando las rutas `require` en `index.php` de vuelta a `../src/...`.
@@ -426,24 +431,32 @@ backups.
 
 **Nginx:** `root` en `public/` (o la raíz elegida), `try_files \$uri /index.php;`, denegar `/data/`, `/src/`, `/vendor/`.
 
-## 7. Ruta base (subdirectorio)
+## 7. Cliente PWA
+El backup incluye el build de producción actual en `pwa/`. Debe publicarse conservando esa ruta para que quede disponible en `https://TU-DOMINIO/pwa/`.
+
+La PWA incluida corresponde a **ShipInventory PWA 0.1.1** y requiere **API 1.4.5**. Para instalación y funcionamiento offline debe servirse mediante **HTTPS**. No es necesario incluir `frontend/` ni `node_modules/` para restaurar o desplegar la PWA: `pwa/` ya contiene el build compilado.
+
+Tras restaurar, comprueba `pwa/index.html`, `pwa/manifest.json`, `pwa/sw.js` y `pwa/.htaccess`.
+
+## 8. Ruta base (subdirectorio)
 Si la aplicación va en `https://ejemplo.com/inventario/` en lugar de la raíz, edita `src/config.php`:
 ```php
 \$BASE_PATH = '/inventario';
 ```
 
-## 8. Comprobar que funciona
+## 9. Comprobar que funciona
 1. Abre la URL en el navegador.
 2. Si es una instalación nueva verás **CONFIGURACIÓN INICIAL → Nueva instalación** para crear el primer administrador.
 3. Si es una restauración de datos, entra con las credenciales del backup.
 4. Menú *Estado del sistema*: `PRAGMA integrity_check = ok`, directorios OK.
+5. Abre `/pwa/`, comprueba login/sincronización y confirma que el service worker se registra correctamente.
 
-## 9. Problemas habituales
+## 10. Problemas habituales
 - **500 / pantalla en blanco:** revisa el `error_log` del servidor y los permisos de `data/`.
 - **No se puede subir foto:** `upload_max_filesize` y `post_max_size` ≥ 8 MB, extensión `gd` cargada.
 - **Sesión no persiste:** cookies bloqueadas o `session.save_path` sin permisos de escritura.
 
-## 10. Qué **NO** debe copiarse tal cual del servidor original
+## 11. Qué **NO** debe copiarse tal cual del servidor original
 - Rutas absolutas de la máquina origen: usa las tuyas propias (`chown`, ubicación del `DocumentRoot`).
 - Certificados TLS, sockets, configuración de proxy o firewall: son propios del servidor destino.
 - Ficheros de log del servidor (`/var/log/...`) o binarios del sistema.
