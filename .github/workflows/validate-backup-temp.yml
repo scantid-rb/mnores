@@ -1,0 +1,31 @@
+name: Temporary backup validation
+
+on:
+  push:
+    branches:
+      - pwa
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Validate backup changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e data/photos/10.jpg
+          php -l src/backup.php
+          grep -Fq "foreach (['assets','src','vendor','pwa'] as \$dir)" src/backup.php
+          grep -Fq "'pwa_included'" src/backup.php
+          grep -Fq "'pwa_version'" src/backup.php
+          grep -Fq "ShipInventory PWA 0.1.1" src/backup.php
+          grep -Fq "requiere **API 1.4.5**" src/backup.php
+          grep -Fq "ShipInventory servidor 1.4.5" README_DEPLOY.md
+          grep -Fq "pwa/" README_DEPLOY.md
+          find src -type f -name '*.php' -print0 | xargs -0 -n1 php -l >/dev/null
